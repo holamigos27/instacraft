@@ -1,0 +1,40 @@
+diff --git a/Dockerfile b/Dockerfile
+index 1803d3a..3e10768 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -45,6 +45,8 @@ ARG CARGO_BUILD_JOBS=1
+ # Left empty, the build reports itself as a dev build.
+ ARG PHOTOCRAFT_BUILD_SHA=
+ ARG PHOTOCRAFT_BUILD_DATE=
++# TEAM POST STUDIO patch: embed the Japanese UI font (BIZ UDPGothic) in the web build.
++ENV CRAFT_FONTS_DIR=/src/jpfonts CRAFT_FONTS_WEB=1 CRAFT_FONTS_REQUIRED=1
+ # index.html selects the wasm-release profile, HEIF support and wasm-opt -Oz.
+ RUN --mount=type=cache,target=/usr/local/cargo/registry \
+     --mount=type=cache,target=/src/target \
+@@ -66,3 +68,7 @@ ENTRYPOINT []
+ CMD ["nginx", "-g", "daemon off;"]
+ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+     CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
++
++# TEAM POST STUDIO: `docker build --target export --output type=local,dest=out .`
++FROM scratch AS export
++COPY --from=builder /src/dist/web/ /
+diff --git a/crates/text/build.rs b/crates/text/build.rs
+index 5377370..f93f7e7 100644
+--- a/crates/text/build.rs
++++ b/crates/text/build.rs
+@@ -22,9 +22,13 @@ use std::path::PathBuf;
+ fn main() {
+     println!("cargo::rerun-if-env-changed=CRAFT_FONTS_DIR");
+     println!("cargo::rerun-if-env-changed=CRAFT_FONTS_REQUIRED");
++    // TEAM POST STUDIO patch: CRAFT_FONTS_WEB=1 embeds craft-fonts in the web build too, so the
++    // Japanese UI has a font (the browser offers no system fonts to the wasm).
++    println!("cargo::rerun-if-env-changed=CRAFT_FONTS_WEB");
++    let embed_web = std::env::var_os("CRAFT_FONTS_WEB").is_some();
+     let wasm = std::env::var("CARGO_CFG_TARGET_ARCH").is_ok_and(|a| a == "wasm32");
+     let mut src = String::from("pub static CRAFT_FONTS: &[CraftFont] = &[\n");
+-    if let Some(dir) = std::env::var_os("CRAFT_FONTS_DIR").filter(|d| !d.is_empty() && !wasm).map(PathBuf::from) {
++    if let Some(dir) = std::env::var_os("CRAFT_FONTS_DIR").filter(|d| !d.is_empty() && (!wasm || embed_web)).map(PathBuf::from) {
+         match craft_fonts(&dir) {
+             Ok(entries) => src.push_str(&entries),
+             Err(e) if std::env::var_os("CRAFT_FONTS_REQUIRED").is_some() => {
