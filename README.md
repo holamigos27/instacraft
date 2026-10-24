@@ -2,7 +2,14 @@
 
 チームのInstagram投稿を「投稿リスト → 編集 → プレビュー → 投稿」まで行うWebアプリです。
 
-## 起動
+## 公開URL
+
+- https://club-attendance-system-phi.vercel.app/instacraft （CRAQUES HUB 管理画面の「instaCRAFT」アイコンから開く）
+- 本体は GitHub Pages（https://holamigos27.github.io/instacraft/ ・リポジトリ holamigos27/instacraft）に置き、
+  出欠システムの `next.config.mjs` の rewrite で同じドメインの `/instacraft` に表示しています。
+- 更新は、このフォルダで変更を commit して `git push` するだけです（1〜2分で反映）。出欠システムの再デプロイは不要です。
+
+## 起動（ローカル）
 
 `start.bat` をダブルクリック（または `python server.py`）→ ブラウザで http://localhost:8765/ が開きます。
 PhotoCraft / VectorCraft は WebAssembly アプリのため、`index.html` を直接開くのではなく必ずこのローカルサーバー経由で使ってください。
