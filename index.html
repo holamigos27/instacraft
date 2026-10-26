@@ -1280,7 +1280,7 @@ const RATIOS = { '1:1': [1080, 1080], '4:5': [1080, 1350], '9:16': [1080, 1920] 
 const MAX_SLIDES = 10;
 const PROPS = ['name', 'role', 'fx', 'fullBleed', 'filled', 'locked', 'selectable', 'evented', 'hasControls',
   'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'perPixelTargetFind', 'splitByGrapheme',
-  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind', 'scorerBox', 'noWrap', 'fitBase'];
+  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind', 'scorerBox', 'noWrap', 'fitBase', 'pkLine'];
 const BADGE_COLORS = ['bg-accent/15 text-accent', 'bg-sky/15 text-sky', 'bg-amber-400/15 text-amber-300', 'bg-violet-400/15 text-violet-300', 'bg-hot/15 text-hot', 'bg-emerald-400/15 text-emerald-300', 'bg-orange-400/15 text-orange-300', 'bg-pink-400/15 text-pink-300'];
 const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇', scorers: "Raise Nakagawa 1'\nEito Watanabe 4'\nTsukasa Nishikawa 12'" };
 /* post-info fields; the user can add their own (key c_…). Labels double as {placeholder} names. */
@@ -1289,6 +1289,7 @@ const INFO_FIELDS_DEFAULT = [
   { key: 'date', label: '日付' }, { key: 'time', label: '時間' }, { key: 'venue', label: '会場', wide: true },
   { key: 'scoreUs', label: '自チームスコア' }, { key: 'scoreThem', label: '相手スコア' }, { key: 'sponsor', label: 'スポンサー名', wide: true },
   { key: 'scorers', label: '得点者', wide: true },
+  { key: 'pk', label: 'PK戦' }, { key: 'pkUs', label: '自チームPK' }, { key: 'pkThem', label: '相手PK' },
 ];
 /* fields added in later versions join the list of anyone who already has one */
 const withDefaultFields = list => [...list, ...INFO_FIELDS_DEFAULT.filter(d => !list.some(f => f.key === d.key))];
@@ -1720,6 +1721,7 @@ const PRESETS = {
       o.push(T(i.scoreThem, { left: W * 0.27, top: sy, width: 360, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 360 * k, lineHeight: 0.85, name: 'スコア（相手）' }));
       o.push(T(t.name, { left: W * 0.73, top: sy + 190 * k, width: 420, fontFamily: 'Oswald', fontWeight: 700, fontSize: 40 * k, name: '自チーム名' }));
       o.push(T(i.opponent, { left: W * 0.27, top: sy + 190 * k, width: 420, fontFamily: 'Oswald', fontWeight: 700, fontSize: 40 * k, name: '対戦相手' }));
+      o.push(pkText(i, { left: W / 2, top: sy + 120 * k, fontSize: 34 * k }));
       o.push(P.rect({ originX: 'center', left: W / 2, top: H * 0.855, width: 120, height: 6, fill: t.accent, name: 'ライン' }));
       o.push(T(`${i.date}  |  ${i.venue}`, { originY: 'top', left: W / 2, top: H * 0.875, width: W - 160, fontFamily: 'Noto Sans JP', fontWeight: 500, fontSize: 30 * k, fill: '#cfd5e2', name: '日付・会場' }));
       return o;
@@ -1806,7 +1808,9 @@ const PRESETS = {
       // the scorers start under the own team's score (the right number)
       const measure = str => new fabric.Text(str, { fontFamily: 'Anton', fontSize: sfs, charSpacing: 40 }).width;
       const xUs = W / 2 - measure(score) / 2 + measure(`${i.scoreThem} - `);
-      o.push(...scorerTexts(ctx, splitScorers(i.scorers), { x: xUs, top: y + 4 * k + sfs * 0.4 + 10 * k }));
+      const under = y + 4 * k + sfs * 0.4 + 10 * k, pkFs = 34 * k;
+      o.push(pkText(i, { left: W / 2, top: under + pkFs * 0.55, fontSize: pkFs }));
+      o.push(...scorerTexts(ctx, splitScorers(i.scorers), { x: xUs, top: under, pkGap: pkFs * 1.35 }));
       return o.concat(logoSlot(ctx));
     }
   },
@@ -1910,13 +1914,16 @@ function photoFrame({ W, H, t, i, k }, title, size = 138) {
   o.push(T(title, { left: cx, top: cy, width: tw + 40, angle: TILT, fontFamily: 'Anton', fontWeight: 400, fontSize: fs, lineHeight: 1, charSpacing: 10, shadow: sh('rgba(0,0,0,0.4)', 18, 0, 6), name: title }));
   return o;
 }
+/* "2 PK 3" under the score (opponent left, own team right, like the score); shown only with PK */
+const pkText = (i, o) => T(`${i.pkThem ?? ''} PK ${i.pkUs ?? ''}`, { width: 360, fontFamily: 'Oswald', fontWeight: 700, charSpacing: 60, visible: !!i.pk, pkLine: true, name: 'PK', ...o });
 /* goal scorers, from under the own score to the right edge: the layout (1-3 columns) that gives
    the biggest letters wins, so about 15 names still fit. Each text remembers its box (scorerBox)
    so it can be laid out again when the names change. */
 const SCORER_LH = 1.3;
 const splitScorers = v => String(v || '').split(/\s*[,、，\/／\n]\s*/).filter(Boolean);
-function scorerTexts({ W, H, k }, names, { x, top, bottom = H * 0.965, right = W * 0.965, base = 21 * k }) {
-  const box = { x, top, bottom, right, base };
+function scorerTexts({ W, H, k, i }, names, { x, top, bottom = H * 0.965, right = W * 0.965, base = 21 * k, pkGap = 0 }) {
+  const box = { x, top, bottom, right, base, pkGap };
+  if (i?.pk && pkGap) top += pkGap; // the PK line sits under the score
   const width = right - x, height = bottom - top, lh = SCORER_LH;
   const style = { originX: 'left', originY: 'top', textAlign: 'left', fontFamily: 'Oswald', fontWeight: 500, lineHeight: lh, scorerBox: box };
   if (!names.length) return [T(' ', { ...style, left: x, top, width, fontSize: base, name: '得点者' })];
@@ -1941,7 +1948,7 @@ function refreshScorers() {
   if (!olds.length) return false;
   const first = olds[0], idx = canvas.getObjects().indexOf(first);
   const look = { fill: first.fill, fontFamily: first.fontFamily, fontWeight: first.fontWeight, fontStyle: first.fontStyle, shadow: first.shadow, charSpacing: first.charSpacing, fromPreset: first.fromPreset };
-  const fresh = scorerTexts({ W: S.W, H: S.H, k: S.W / 1080 }, splitScorers(S.info.scorers), first.scorerBox);
+  const fresh = scorerTexts({ W: S.W, H: S.H, k: S.W / 1080, i: S.info }, splitScorers(S.info.scorers), first.scorerBox);
   HIST.lock = true;
   olds.forEach(o => canvas.remove(o));
   fresh.forEach((t, n) => { t.set(look); t.initDimensions(); fitScorer(t); canvas.insertAt(t, idx + n); });
@@ -1999,7 +2006,8 @@ const presetType = key => key.startsWith('c:') ? customById(key.slice(2))?.type 
 
 /* "{対戦相手}" / "{opponent}" → the post's info; unknown names stay as written */
 function fillInfo(text) {
-  const byName = { team: S.team.name, account: S.team.account, 'チーム名': S.team.name, 'アカウント': '@' + S.team.account };
+  const byName = { team: S.team.name, account: S.team.account, 'チーム名': S.team.name, 'アカウント': '@' + S.team.account,
+    'PK結果': S.info.pk ? `(PK ${S.info.pkUs ?? ''}-${S.info.pkThem ?? ''})` : '' };
   infoFields.forEach(f => { byName[f.key] = S.info[f.key] ?? ''; byName[f.label] = S.info[f.key] ?? ''; });
   return String(text).replace(/\{([^{}\n]+)\}/g, (m, k) => (k in byName ? byName[k] : m));
 }
@@ -3121,9 +3129,17 @@ function setPostType(type, variant = 0, fromPreset = false) {
   renderVariants(); $('#capVariant').value = variant;
   insertTemplate(fromPreset);
 }
+/* with a PK shoot-out, "(PK 3-2)" follows the score line of any template that has no {PK結果} */
+function withPkResult(tpl) {
+  if (!S.info.pk || tpl.includes('{PK結果}')) return tpl;
+  const lines = tpl.split('\n'), n = lines.findIndex(l => l.includes('{自チームスコア}') && l.includes('{相手スコア}'));
+  if (n < 0) return tpl;
+  lines[n] = lines[n].replace(/\s*$/, ' {PK結果}');
+  return lines.join('\n');
+}
 function captionTemplate() {
   const t = curType();
-  let txt = fillInfo(t?.templates?.[+$('#capVariant').value || 0]?.text || '');
+  let txt = fillInfo(withPkResult(t?.templates?.[+$('#capVariant').value || 0]?.text || ''));
   if ($('#autoTags').checked) {
     BLOCKS.filter(b => b.text.trim()).forEach(b => { txt += (txt ? '\n\n' : '') + b.text.trim(); });
     const common = tagGroups.find(g => g.id === 'common');
@@ -3162,7 +3178,7 @@ function openTypesModal(typeId) {
   renderTypesModal(); openModal('typesModal');
 }
 function placeholderList() {
-  return [{ label: 'チーム名' }, { label: 'アカウント' }, ...infoFields.map(f => ({ label: f.label }))];
+  return [{ label: 'チーム名' }, { label: 'アカウント' }, ...infoFields.filter(f => f.key !== 'pk').map(f => ({ label: f.label })), { label: 'PK結果' }];
 }
 function renderTypesModal() {
   const t = TYPES[TM.t];
@@ -3501,7 +3517,15 @@ function renderInfoFields() {
       <label class="lbl flex items-center justify-between gap-1"><span class="truncate">チーム名 <span class="text-slate-600">{チーム名}</span></span><span class="text-[9px] text-slate-600">チーム設定と共通</span></label>
       <input class="field select-text" data-team-name value="${esc(S.team.name || '')}">
     </div>`;
-  $('#infoFields').innerHTML = infoFields.map(f => (f.key === 'opponent' ? teamField : '') + `
+  const pkField = `
+    <div class="col-span-2 rounded-lg border border-line/60 bg-ink/40 p-2">
+      <label class="ctl-row text-[12px]"><input type="checkbox" data-pk ${S.info.pk ? 'checked' : ''}>PK戦あり（スコアの下に PK の結果を表示）</label>
+      <div class="grid grid-cols-2 gap-2 mt-2 ${S.info.pk ? '' : 'hidden'}" data-pk-box>
+        <div><label class="lbl">自チームPK <span class="text-slate-600">{自チームPK}</span></label><input class="field select-text" data-info="pkUs" inputmode="numeric" value="${esc(S.info.pkUs ?? '')}"></div>
+        <div><label class="lbl">相手PK <span class="text-slate-600">{相手PK}</span></label><input class="field select-text" data-info="pkThem" inputmode="numeric" value="${esc(S.info.pkThem ?? '')}"></div>
+      </div>
+    </div>`;
+  $('#infoFields').innerHTML = infoFields.filter(f => !['pk', 'pkUs', 'pkThem'].includes(f.key)).map(f => (f.key === 'opponent' ? teamField : '') + `
     <div class="${f.wide ? 'col-span-2' : ''}">
       <label class="lbl flex items-center justify-between gap-1"><span class="truncate">${esc(f.label)} <span class="text-slate-600">{${esc(f.label)}}</span></span>
         ${builtIn.has(f.key) ? '' : `<button class="text-slate-600 hover:text-hot" data-fdel="${f.key}" title="この項目を削除"><i class="fa-solid fa-xmark"></i></button>`}</label>
@@ -3509,7 +3533,7 @@ function renderInfoFields() {
         ? `<textarea class="field select-text resize-y leading-relaxed" rows="6" data-info="scorers" placeholder="1行に1人ずつ（例：Raise Nakagawa 1'）&#10;カンマ区切りでもOK">${esc(scorerLines(S.info.scorers))}</textarea>
            <div class="text-[10px] text-slate-500 mt-1">1行に1人。入力するとデザインにすぐ反映されます（<span data-scorer-count>${splitScorers(S.info.scorers).length}</span>人）</div>`
         : `<input class="field select-text" data-info="${f.key}" ${{ competition: 'list="dlCompetitions"', venue: 'list="dlVenues"', opponent: 'list="dlOpponents"' }[f.key] || ''} value="${esc(S.info[f.key] ?? '')}">`}
-    </div>`).join('');
+    </div>` + (f.key === 'scoreThem' ? pkField : '')).join('');
   fillMatchInfo();
   $('#placeholderChips').innerHTML = placeholderList().map(p => `<span class="chip" data-ph="${esc(p.label)}" title="選択中のテキストに挿入">{${esc(p.label)}}</span>`).join('');
 }
@@ -3517,10 +3541,30 @@ const fillInfoInputs = renderInfoFields;
 /* the scorers box shows one name per line (older entries were comma separated) */
 const scorerLines = v => String(v || '').includes('\n') ? String(v) : splitScorers(v).join('\n');
 let scorerT = null, infoTextT = null;
+/* PK: the checkbox shows the PK inputs and the PK line of the design; the scorers make room for it */
+function applyPkVisibility() {
+  let n = 0;
+  canvas.getObjects().forEach(o => { if (o.pkLine) { o.visible = !!S.info.pk; n++; } });
+  if (!refreshScorers() && n) saveHistory();
+  canvas.requestRenderAll();
+}
+$('#infoFields').addEventListener('change', e => {
+  if (!e.target.matches('[data-pk]')) return;
+  S.info.pk = e.target.checked ? '1' : ''; store.set('info', S.info);
+  if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
+  $('#infoFields [data-pk-box]').classList.toggle('hidden', !e.target.checked);
+  applyPkVisibility(); scheduleInfoTexts();
+  if (e.target.checked) $('#infoFields [data-info="pkUs"]').focus();
+});
 /* info edits show up in the design right away (texts that carry a template) */
 function scheduleInfoTexts() {
   clearTimeout(infoTextT);
-  infoTextT = setTimeout(() => { if (CUR.post && fillTplTexts()) saveHistory(); }, 250);
+  infoTextT = setTimeout(() => {
+    if (!CUR.post) return;
+    if (fillTplTexts()) saveHistory();
+    // a caption still exactly as the template made it follows too (an edited one is left alone)
+    if (CUR.kind === 'post' && S.lastTemplate && cap.value.trim() === S.lastTemplate.trim()) insertTemplate(false);
+  }, 250);
 }
 $('#infoFields').addEventListener('input', e => {
   if (e.target.matches('[data-team-name]')) { const t = $('#tmName'); t.value = e.target.value; t.dispatchEvent(new Event('input')); return; }
