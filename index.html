@@ -1136,7 +1136,7 @@ async function loadSharedSettings() {
   if (st.team) Object.assign(S.team, st.team);
   if (st.types) TYPES = st.types;
   if (st.tagGroups) tagGroups = st.tagGroups;
-  if (st.infoFields) infoFields = st.infoFields;
+  if (st.infoFields) infoFields = withDefaultFields(st.infoFields);
   if (st.mentions) mentions = st.mentions;
   // the first STAFF to open it shares this browser's settings as the starting point
   const missing = SHARED_KEYS.filter(k => st[k] == null);
@@ -1149,16 +1149,19 @@ const RATIOS = { '1:1': [1080, 1080], '4:5': [1080, 1350], '9:16': [1080, 1920] 
 const MAX_SLIDES = 10;
 const PROPS = ['name', 'role', 'fx', 'fullBleed', 'filled', 'locked', 'selectable', 'evented', 'hasControls',
   'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'perPixelTargetFind', 'splitByGrapheme',
-  'tpl', 'fromPreset'];
+  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot'];
 const BADGE_COLORS = ['bg-accent/15 text-accent', 'bg-sky/15 text-sky', 'bg-amber-400/15 text-amber-300', 'bg-violet-400/15 text-violet-300', 'bg-hot/15 text-hot', 'bg-emerald-400/15 text-emerald-300', 'bg-orange-400/15 text-orange-300', 'bg-pink-400/15 text-pink-300'];
-const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇' };
+const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇', scorers: "Raise Nakagawa 1', Eito Watanabe 4', Tsukasa Nishikawa 12'" };
 /* post-info fields; the user can add their own (key c_…). Labels double as {placeholder} names. */
 const INFO_FIELDS_DEFAULT = [
   { key: 'competition', label: '大会名', wide: true }, { key: 'opponent', label: '対戦相手', wide: true },
   { key: 'date', label: '日付' }, { key: 'time', label: '時間' }, { key: 'venue', label: '会場', wide: true },
   { key: 'scoreUs', label: '自チームスコア' }, { key: 'scoreThem', label: '相手スコア' }, { key: 'sponsor', label: 'スポンサー名', wide: true },
+  { key: 'scorers', label: '得点者', wide: true },
 ];
-let infoFields = store.get('infoFields', INFO_FIELDS_DEFAULT);
+/* fields added in later versions join the list of anyone who already has one */
+const withDefaultFields = list => [...list, ...INFO_FIELDS_DEFAULT.filter(d => !list.some(f => f.key === d.key))];
+let infoFields = withDefaultFields(store.get('infoFields', INFO_FIELDS_DEFAULT));
 
 const S = {
   ratio: '4:5', W: 1080, H: 1350, zoom: 1, tab: 'quick',
@@ -1508,7 +1511,7 @@ const PRESETS = {
       o.push(T('OFFICIAL', { originY: 'top', left: W / 2, top, width: 440, fontFamily: 'Oswald', fontWeight: 500, fontSize: 36 * k, fill: t.accent, charSpacing: 600, name: 'OFFICIAL' }));
       o.push(T('SPONSOR', { originY: 'top', left: W / 2, top: top + 50 * k, width: W, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 210 * k, lineHeight: 0.85, charSpacing: 80, shadow: sh('rgba(0,0,0,0.5)', 30, 0, 10), name: 'SPONSOR' }));
       const cardTop = H * 0.36, cardH = 440 * k;
-      const card = P.rect({ originX: 'center', left: W / 2, top: cardTop, width: W - 240, height: cardH, rx: 36, ry: 36, fill: '#ffffff', shadow: sh('rgba(0,0,0,0.5)', 50, 0, 20), role: 'slot', name: 'ロゴエリア' });
+      const card = P.rect({ originX: 'center', left: W / 2, top: cardTop, width: W - 240, height: cardH, rx: 36, ry: 36, fill: '#ffffff', shadow: sh('rgba(0,0,0,0.5)', 50, 0, 20), role: 'slot', slotPrimary: true, name: 'ロゴエリア' });
       o.push(card);
       o.push(T('SPONSOR LOGO\n画像をアップロードするとここに配置されます', { left: W / 2, top: cardTop + cardH / 2, width: W - 340, fontFamily: 'Noto Sans JP', fontWeight: 700, fontSize: 30 * k, lineHeight: 1.6, fill: '#9aa3b2', splitByGrapheme: true, role: 'placeholder', name: 'ロゴ案内' }));
       const nameTop = cardTop + cardH + 60 * k;
@@ -1517,18 +1520,137 @@ const PRESETS = {
       o.push(T(`${t.name}  |  @${t.account}`, { left: W / 2, top: H - 84 * k, width: W - 160, fontFamily: 'Oswald', fontWeight: 500, fontSize: 26 * k, fill: 'rgba(255,255,255,0.6)', charSpacing: 80, name: 'チーム情報' }));
       return { objects: o, slot: card };
     }
+  },
+  /* ---- photo style: big photo on top, dark slanted panel, maroon / green / light-blue bars.
+     The photo, the emblems and the logo are slots: drop images in (first image = photo). ---- */
+  ftResult: {
+    title: 'FULL TIME', sub: '試合結果（写真）', type: 'match', variant: 1,
+    bg: () => ({ type: 'solid', c1: PH.dark, c2: PH.dark, angle: 90 }),
+    thumb: () => PH.thumb,
+    build(ctx) {
+      const { W, H, i, k } = ctx;
+      const o = photoFrame(ctx, 'FULL TIME');
+      const y = H * 0.855;
+      o.push(...emblemSlot(W * 0.22, y, 74 * k, 'home', 'エンブレム'));
+      o.push(...emblemSlot(W * 0.78, y, 74 * k, 'away', '相手エンブレム'));
+      o.push(T(`${i.scoreUs} - ${i.scoreThem}`, { left: W / 2, top: y + 4 * k, width: 420, fontFamily: 'Anton', fontWeight: 400, fontSize: 132 * k, skewX: -10, charSpacing: 40, name: 'スコア' }));
+      const scorers = String(i.scorers || '').split(/\s*[,、，\/／\n]\s*/).filter(Boolean).join('\n');
+      o.push(T(scorers || ' ', { originX: 'left', originY: 'top', left: W * 0.58, top: H * 0.905, width: W * 0.34, textAlign: 'left', fontFamily: 'Oswald', fontWeight: 500, fontSize: 21 * k, lineHeight: 1.35, name: '得点者' }));
+      return o.concat(logoSlot(ctx));
+    }
+  },
+  ftMatchday: {
+    title: 'MATCH DAY', sub: '試合告知（写真）', type: 'match', variant: 0,
+    bg: () => ({ type: 'solid', c1: PH.dark, c2: PH.dark, angle: 90 }),
+    thumb: () => PH.thumb,
+    build(ctx) {
+      const { W, H, i, k } = ctx;
+      const o = photoFrame(ctx, 'MATCH DAY');
+      const y = H * 0.835;
+      o.push(...emblemSlot(W * 0.22, y, 66 * k, 'home', 'エンブレム'));
+      o.push(...emblemSlot(W * 0.78, y, 66 * k, 'away', '相手エンブレム'));
+      o.push(T('VS', { left: W / 2, top: y + 4 * k, width: 260, fontFamily: 'Anton', fontWeight: 400, fontSize: 104 * k, skewX: -10, name: 'VS' }));
+      o.push(T(`${i.date}  ${i.time} KICK OFF`, { left: W / 2, top: H * 0.915, width: W - 160, fontFamily: 'Oswald', fontWeight: 700, fontSize: 36 * k, charSpacing: 60, name: '日時' }));
+      o.push(T(`@ ${i.venue}`, { left: W / 2, top: H * 0.953, width: W - 160, fontFamily: 'Noto Sans JP', fontWeight: 700, fontSize: 24 * k, fill: PH.blue, name: '会場' }));
+      return o.concat(logoSlot(ctx));
+    }
+  },
+  ftInfo: {
+    title: 'INFORMATION', sub: 'お知らせ（写真）', type: 'announce', variant: 0,
+    bg: () => ({ type: 'solid', c1: PH.dark, c2: PH.dark, angle: 90 }),
+    thumb: () => PH.thumb,
+    build(ctx) {
+      const { W, H, k } = ctx;
+      const o = photoFrame(ctx, 'INFORMATION', 112);
+      o.push(T('お知らせ', { left: W / 2, top: H * 0.83, width: W - 160, fontFamily: 'Noto Sans JP', fontWeight: 900, fontSize: 58 * k, splitByGrapheme: true, name: 'タイトル' }));
+      o.push(P.rect({ originX: 'center', left: W / 2, top: H * 0.862, width: 90, height: 6, fill: PH.green, name: 'アンダーライン' }));
+      o.push(T('11月の練習スケジュールが変更になりました。\n詳しくはキャプションをご確認ください。', { left: W / 2, top: H * 0.918, width: W - 200, fontFamily: 'Noto Sans JP', fontWeight: 500, fontSize: 26 * k, lineHeight: 1.6, fill: '#dfe3ea', splitByGrapheme: true, name: '本文' }));
+      return o.concat(logoSlot(ctx));
+    }
+  },
+  ftRecruit: {
+    title: 'JOIN US', sub: 'メンバー募集（写真）', type: 'announce', variant: 1,
+    bg: () => ({ type: 'solid', c1: PH.dark, c2: PH.dark, angle: 90 }),
+    thumb: () => PH.thumb,
+    build(ctx) {
+      const { W, H, i, k } = ctx;
+      const o = photoFrame(ctx, 'JOIN US');
+      o.push(T('メンバー募集中！', { left: W / 2, top: H * 0.828, width: W - 140, fontFamily: 'Noto Sans JP', fontWeight: 900, fontSize: 60 * k, splitByGrapheme: true, name: 'キャッチ' }));
+      o.push(T(`体験参加・見学 随時受付中 ｜ ${i.venue}`, { left: W / 2, top: H * 0.878, width: W - 160, fontFamily: 'Noto Sans JP', fontWeight: 700, fontSize: 25 * k, fill: PH.blue, splitByGrapheme: true, name: '募集要項' }));
+      const ctaTop = H * 0.91;
+      o.push(P.rect({ originX: 'center', left: W / 2, top: ctaTop, width: W - 300, height: 62 * k, fill: PH.green, skewX: -12, name: 'CTAボタン' }));
+      o.push(T('プロフィールのリンク・DMからお気軽に！', { left: W / 2, top: ctaTop + 32 * k, width: W - 320, fontFamily: 'Noto Sans JP', fontWeight: 900, fontSize: 26 * k, splitByGrapheme: true, name: 'CTA' }));
+      return o.concat(logoSlot(ctx));
+    }
+  },
+  ftSponsor: {
+    title: 'PARTNER', sub: 'スポンサー紹介（写真）', type: 'sponsor', variant: 0,
+    bg: () => ({ type: 'solid', c1: PH.dark, c2: PH.dark, angle: 90 }),
+    thumb: () => PH.thumb,
+    build(ctx) {
+      const { W, H, i, k } = ctx;
+      const o = photoFrame(ctx, 'PARTNER');
+      const cy = H * 0.845, cw = 440, ch = 118 * k;
+      o.push(P.rect({ originX: 'center', originY: 'center', left: W / 2, top: cy, width: cw, height: ch, rx: 14, ry: 14, fill: '#ffffff', role: 'slot', slotId: 'sponsor', slotPad: 14, name: 'スポンサーロゴの枠' }));
+      o.push(T('SPONSOR LOGO', { left: W / 2, top: cy, width: cw - 40, fontFamily: 'Oswald', fontWeight: 700, fontSize: 26 * k, fill: '#9aa3b2', charSpacing: 120, role: 'placeholder', slotFor: 'sponsor', evented: false, name: 'ロゴの案内' }));
+      o.push(T(`${i.sponsor || '株式会社〇〇〇〇'} 様`, { left: W / 2, top: H * 0.918, width: W - 160, fontFamily: 'Noto Sans JP', fontWeight: 900, fontSize: 40 * k, splitByGrapheme: true, name: 'スポンサー名' }));
+      o.push(T('THANK YOU FOR YOUR SUPPORT', { left: W / 2, top: H * 0.956, width: W - 160, fontFamily: 'Oswald', fontWeight: 500, fontSize: 22 * k, fill: PH.blue, charSpacing: 300, name: 'THANK YOU' }));
+      return o.concat(logoSlot(ctx));
+    }
   }
 };
 
+/* ---- parts of the photo-style presets ---- */
+const PH = {
+  dark: '#0c0c0f', red: '#7d1f2c', green: '#2e6b48', blue: '#8fb7d7',
+  thumb: 'linear-gradient(172deg, #4b4f5a 0%, #262830 64%, #0c0c0f 64.5%)',
+};
+const bar = (x, y, w, h, fill, name = 'ライン') => P.rect({ left: x, top: y, width: w, height: h, fill, angle: 2.5, name });
+/* photo area (until a photo is in), slanted dark panel, accent bars, vertical match line, big title */
+function photoFrame({ W, H, t, i, k }, title, size = 138) {
+  const o = [];
+  const py = H * 0.735;
+  o.push(P.rect({ left: 0, top: 0, width: W, height: py + H * 0.04, fill: vGrad(py + H * 0.04, [[0, '#454955'], [1, '#1b1c22']]), role: 'placeholder', slotFor: 'photo', evented: false, name: '写真エリア' }));
+  o.push(T('PHOTO\n最初にアップロードした写真が、ここに全面で入ります', { left: W / 2, top: H * 0.36, width: W - 240, fontFamily: 'Noto Sans JP', fontWeight: 700, fontSize: 28 * k, lineHeight: 1.7, fill: 'rgba(255,255,255,0.45)', splitByGrapheme: true, role: 'placeholder', slotFor: 'photo', evented: false, name: '写真の案内' }));
+  o.push(P.rect({ left: 0, top: py - H * 0.22, width: W, height: H * 0.24, fill: vGrad(H * 0.24, [[0, 'rgba(12,12,15,0)'], [1, 'rgba(12,12,15,0.9)']]), perPixelTargetFind: true, name: '写真の下の影' }));
+  o.push(P.poly([{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H * 0.018 }, { x: 0, y: H * 0.066 }], { fill: PH.dark, name: '上の帯' }));
+  o.push(P.poly([{ x: 0, y: py - H * 0.012 }, { x: W, y: py + H * 0.03 }, { x: W, y: H }, { x: 0, y: H }], { fill: PH.dark, name: '下のパネル' }));
+  o.push(bar(0, H * 0.038, W * 0.31, 13 * k, PH.red));
+  o.push(bar(W * 0.62, H * 0.088, W * 0.4, 74 * k, PH.green));
+  o.push(bar(W * 0.83, H * 0.172, W * 0.19, 16 * k, PH.blue));
+  o.push(bar(0, H * 0.758, W * 0.16, 30 * k, PH.green));
+  o.push(bar(0, H * 0.802, W * 0.08, 9 * k, PH.red));
+  o.push(bar(W * 0.84, H * 0.83, W * 0.17, 13 * k, PH.blue));
+  o.push(bar(W * 0.885, H * 0.896, W * 0.12, 9 * k, PH.red));
+  o.push(bar(W * 0.945, H * 0.925, W * 0.06, 9 * k, PH.blue));
+  o.push(T(`${i.date}  ${t.name} vs ${i.opponent}`, { left: W * 0.94, top: H * 0.45, width: H * 0.46, angle: 90, fontFamily: 'Oswald', fontWeight: 500, fontSize: 24 * k, fill: 'rgba(255,255,255,0.85)', charSpacing: 160, name: '縦の試合情報' }));
+  const ty = py - 4 * k;
+  o.push(P.rect({ left: 0, top: ty - 10 * k, width: W * 0.27, height: 4, fill: '#ffffff', angle: 1.5, name: '左の線' }));
+  o.push(P.rect({ left: W * 0.71, top: ty + 6 * k, width: W * 0.3, height: 4, fill: '#ffffff', angle: 1.5, name: '右の線' }));
+  o.push(T(title, { left: W / 2, top: ty, width: W * 0.8, fontFamily: 'Anton', fontWeight: 400, fontSize: size * k, skewX: -10, charSpacing: 10, shadow: sh('rgba(0,0,0,0.45)', 20, 0, 6), name: title }));
+  return o;
+}
+/* an empty slot: dashed ring + label; filled by uploading while it is selected (or in order) */
+function emblemSlot(x, y, r, id, label) {
+  return [
+    P.circle({ left: x, top: y, radius: r, fill: 'rgba(255,255,255,0.07)', stroke: 'rgba(255,255,255,0.5)', strokeWidth: 2, strokeDashArray: [8, 6], role: 'slot', slotId: id, slotGhost: true, slotPad: 2, name: label + 'の枠' }),
+    T(label, { left: x, top: y, width: r * 1.8, fontFamily: 'Noto Sans JP', fontWeight: 700, fontSize: Math.max(14, r * 0.24), fill: 'rgba(255,255,255,0.6)', splitByGrapheme: true, role: 'placeholder', slotFor: id, evented: false, name: label + 'の案内' }),
+  ];
+}
+const logoSlot = ({ W, H, k }) => emblemSlot(W * 0.915, H * 0.055, 52 * k, 'logo', 'ロゴ');
+
+const slotKey = slot => slot.slotId || 'main';
 function placeInSlot(img, slot) {
-  const b = slot.getBoundingRect(true, true), pad = 50;
+  const b = slot.getBoundingRect(true, true), pad = slot.slotPad ?? 50;
   const s = Math.min((b.width - pad * 2) / img.width, (b.height - pad * 2) / img.height);
-  img.set({ originX: 'center', originY: 'center', left: b.left + b.width / 2, top: b.top + b.height / 2, angle: 0, scaleX: s, scaleY: s, fullBleed: false });
+  img.set({ originX: 'center', originY: 'center', left: b.left + b.width / 2, top: b.top + b.height / 2, angle: 0, scaleX: s, scaleY: s, fullBleed: false, inSlot: slotKey(slot) });
   img.setCoords();
   canvas.moveTo(img, canvas.getObjects().indexOf(slot) + 1);
   slot.filled = true;
-  canvas.getObjects().filter(o => o.role === 'placeholder').forEach(o => canvas.remove(o));
+  if (slot.slotGhost) slot.set('opacity', 0);
+  canvas.getObjects().filter(o => o.role === 'placeholder' && (o.slotFor || 'main') === slotKey(slot)).forEach(o => canvas.remove(o));
 }
+const removePhotoPlaceholders = () => canvas.getObjects().filter(o => o.slotFor === 'photo').forEach(o => canvas.remove(o));
 
 /* the user's own presets (store "presets"), referenced on a slide as "c:<id>" */
 let CUSTOM = [];
@@ -1570,7 +1692,13 @@ async function applyPreset(key, opts = {}) {
   const objs = Array.isArray(res) ? res : res.objects;
   kept.forEach(img => { if (img.fullBleed) coverImage(img); canvas.add(img); });
   objs.forEach(o => canvas.add(o));
-  if (res.slot && kept.length) placeInSlot(kept[kept.length - 1], res.slot);
+  if (kept.some(img => img.fullBleed)) removePhotoPlaceholders();
+  kept.filter(img => img.inSlot).forEach(img => {
+    const slot = canvas.getObjects().find(o => o.role === 'slot' && !o.filled && slotKey(o) === img.inSlot);
+    if (slot) placeInSlot(img, slot);
+  });
+  const loose = kept.filter(img => !img.fullBleed && !img.inSlot);
+  if (res.slot && !res.slot.filled && loose.length) placeInSlot(loose[loose.length - 1], res.slot);
   HIST.lock = false;
   S.lastPreset = key; S.dirty = false;
   canvas.requestRenderAll();
@@ -1767,15 +1895,21 @@ async function handleFiles(files) {
   }
   if (added) toast(toSlides ? `${added}枚の画像をスライドとして追加しました` : `${added}枚の画像を配置しました`, 'fa-image');
 }
-function addImageFromURL(url, { cover, name } = {}) {
+/* where an image goes: the slot picked (selected) -> a primary slot (sponsor card) -> the full-bleed
+   photo if there is none yet -> the next empty slot (emblems, logo) -> free, at 60 % */
+function addImageFromURL(url, { cover, name, slot: target } = {}) {
   return new Promise(res => {
     fabric.Image.fromURL(url, img => {
       img.set({ name: name || '画像', originX: 'center', originY: 'center', left: S.W / 2, top: S.H / 2 });
-      const slot = canvas.getObjects().find(o => o.role === 'slot' && !o.filled);
-      const hasImg = canvas.getObjects().some(o => o.type === 'image');
+      const active = canvas.getActiveObject();
+      const empty = canvas.getObjects().filter(o => o.role === 'slot' && !o.filled);
+      const pick = target || (active?.role === 'slot' && !active.filled ? active : null) || (!cover ? empty.find(s => s.slotPrimary || !s.slotId) : null);
+      const hasPhoto = canvas.getObjects().some(o => o.type === 'image' && (o.fullBleed || !o.inSlot));
+      const slotName = sl => (sl.name || '枠').replace(/の枠$/, '') + 'の画像';
       canvas.add(img);
-      if (slot && !cover) placeInSlot(img, slot);
-      else if (cover || (!hasImg && cover !== false)) { coverImage(img); canvas.moveTo(img, 1); if (!name) img.name = '背景写真'; }
+      if (pick && cover !== true) { placeInSlot(img, pick); if (!name) img.name = slotName(pick); }
+      else if (cover || (!hasPhoto && cover !== false)) { coverImage(img); canvas.moveTo(img, 1); removePhotoPlaceholders(); if (!name) img.name = '背景写真'; }
+      else if (empty.length && cover !== false) { placeInSlot(img, empty[0]); if (!name) img.name = slotName(empty[0]); }
       else img.scale(Math.min(S.W * 0.6 / img.width, S.H * 0.6 / img.height));
       img.setCoords();
       canvas.setActiveObject(img); canvas.requestRenderAll();
@@ -1941,6 +2075,7 @@ function renderProps() {
   if (o.type === 'textbox') h = textPropsHTML(o);
   else if (o.type === 'image') h = imagePropsHTML(o);
   else if (o.type === 'group') h = groupPropsHTML(o);
+  else if (o.role === 'slot') h = slotPropsHTML(o) + shapePropsHTML(o);
   else h = shapePropsHTML(o);
   el.innerHTML = h;
 }
@@ -2045,6 +2180,11 @@ function imagePropsHTML(o) {
       C.btns([['cover', '<i class="fa-solid fa-expand mr-1"></i>全面に敷く'], ['contain', '<i class="fa-solid fa-compress mr-1"></i>全体を表示'], ['fit80', '80%サイズ']]) +
       C.color('fx_tintColor', 'カラー重ねの色', f.tintColor || S.team.primary));
 }
+function slotPropsHTML(o) {
+  return C.sec('fa-image', '画像の枠',
+    `<p class="text-[11px] text-slate-400 leading-relaxed">${esc((o.name || '枠').replace(/の枠$/, ''))}を入れる枠です。${o.filled ? '画像が入っています。' : 'ここに画像を入れられます。'}</p>` +
+    C.btns([['slotUpload', '<i class="fa-solid fa-upload mr-1"></i>この枠に画像を入れる']]));
+}
 function shapePropsHTML(o) {
   const noFill = !o.fill || (typeof o.fill === 'string' && /rgba\(.*,\s*0\)$/.test(o.fill.replace(/\s/g, '')));
   const isGrad = o.fill && typeof o.fill === 'object';
@@ -2136,6 +2276,13 @@ function propAction(act) {
     case 'align': o.set('textAlign', v); break;
     case 'bg': { const c = toHex(o.backgroundColor || o.textBackgroundColor || S.team.accent); o.set({ backgroundColor: v === 'box' ? c : '', textBackgroundColor: v === 'line' ? c : '' }); break; }
     case 'fx': applyFxPreset(v, o); return;
+    case 'slotUpload': {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'image/*';
+      inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const url = await readImageFile(f); S.images.push(url); renderGallery(); await addImageFromURL(url, { slot: o }); };
+      inp.click();
+      return;
+    }
     case 'cover': coverImage(o); canvas.moveTo(o, 1); break;
     case 'contain': { const s = Math.min(S.W / o.width, S.H / o.height); o.set({ scaleX: s, scaleY: s, angle: 0, fullBleed: false }); o.setPositionByOrigin(new fabric.Point(S.W / 2, S.H / 2), 'center', 'center'); break; }
     case 'fit80': { const s = Math.min(S.W * 0.8 / o.width, S.H * 0.8 / o.height); o.set({ scaleX: s, scaleY: s, fullBleed: false }); o.setPositionByOrigin(new fabric.Point(S.W / 2, S.H / 2), 'center', 'center'); break; }
