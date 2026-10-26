@@ -260,7 +260,7 @@
       </div>
       <div class="bg-panel border border-line rounded-2xl p-4 mb-6 flex flex-wrap items-end gap-3">
         <div class="flex-1 min-w-[200px]"><label class="lbl">名前</label><input class="field select-text" id="assetName" placeholder="例：RED HAWKS（空欄ならファイル名）"></div>
-        <div><label class="lbl">種類</label><select class="field !w-auto" id="assetKind"><option value="emblem">エンブレム</option><option value="logo">ロゴ</option></select></div>
+        <div><label class="lbl">種類</label><select class="field !w-auto" id="assetKind"><option value="emblem">エンブレム</option><option value="logo">ロゴ</option><option value="sponsor">スポンサー</option></select></div>
         <label class="btn btn-accent cursor-pointer"><i class="fa-solid fa-upload"></i>画像を選んで登録<input type="file" id="assetFile" accept="image/*" multiple class="hidden"></label>
         <p class="w-full text-[10px] text-slate-500">背景が透明なPNGがおすすめです。複数選ぶとまとめて登録します（名前はファイル名）。</p>
       </div>
@@ -491,7 +491,7 @@
             <div class="grid grid-cols-4 gap-1.5 mt-2.5" id="gallery"></div>
           </div>
           <div>
-            <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-shield-halved"></i>エンブレム・ロゴ</span>
+            <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-shield-halved"></i>エンブレム・ロゴ・スポンサー</span>
               <a href="#/assets" class="tracking-normal normal-case font-normal text-[10px] text-accent hover:underline">登録・管理</a></div>
             <div class="grid grid-cols-4 gap-1.5" id="assetTiles"></div>
             <p class="text-[10px] text-slate-500 mt-1.5">押すと空いている枠（選択中の枠）に入ります。</p>
@@ -502,6 +502,7 @@
               <div class="tile" data-slot-add="emblem"><i class="fa-regular fa-circle"></i>エンブレム枠</div>
               <div class="tile" data-slot-add="logo"><i class="fa-regular fa-square"></i>ロゴ枠</div>
               <div class="tile" data-slot-add="photo"><i class="fa-regular fa-image"></i>写真枠</div>
+              <div class="tile" data-slot-add="sponsor"><i class="fa-regular fa-handshake"></i>スポンサー枠</div>
             </div>
             <p class="text-[10px] text-slate-500 mt-1.5">デザインプリセットに枠を置いておくと、投稿で使うときにエンブレム・ロゴ・アップロードした写真がその位置・大きさで入ります（写真は枠いっぱいに切り抜き）。</p>
           </div>
@@ -1876,7 +1877,7 @@ function placeInSlot(img, slot) {
   canvas.getObjects().filter(o => o.role === 'placeholder' && (o.slotFor || 'main') === slotKey(slot)).forEach(o => canvas.remove(o));
 }
 /* after a design change, emblems and logos go back into their slot, or into a free slot of the same kind */
-const keyKind = k => (/^photo-/.test(k) ? 'photo' : k === 'main' || k === 'logo' || k === 'sponsor' || /^logo-/.test(k) ? 'logo' : 'emblem');
+const keyKind = k => (/^photo-/.test(k) ? 'photo' : k === 'sponsor' || /^sponsor-/.test(k) ? 'sponsor' : k === 'main' || k === 'logo' || /^logo-/.test(k) ? 'logo' : 'emblem');
 function refillSlots(kept) {
   const free = () => canvas.getObjects().filter(o => o.role === 'slot' && !o.filled);
   const slotted = kept.filter(img => img.inSlot), rest = [];
@@ -2150,7 +2151,7 @@ function addImageFromURL(url, { cover, name, slot: target, kind } = {}) {
   });
 }
 /* emblem or logo: what a slot expects */
-const slotKindOf = sl => sl.slotKind || (sl.slotId === 'logo' || sl.slotId === 'sponsor' || !sl.slotId ? 'logo' : 'emblem');
+const slotKindOf = sl => sl.slotKind || (sl.slotId === 'sponsor' ? 'sponsor' : sl.slotId === 'logo' || !sl.slotId ? 'logo' : 'emblem');
 const slotOf = img => img?.inSlot && canvas.getObjects().find(o => o.role === 'slot' && slotKey(o) === img.inSlot);
 /* swap an image's picture, keeping where it sits (its slot, or its box and angle) */
 function replaceImage(o, url, name) {
@@ -2196,9 +2197,10 @@ $('#assetTiles').addEventListener('click', e => {
 });
 /* an empty emblem / logo frame for a design preset (a group, so the label moves with it) */
 function addSlotFrame(kind) {
-  const label = { logo: 'ロゴ', photo: '写真' }[kind] || 'エンブレム', r = 120;
+  const label = { logo: 'ロゴ', photo: '写真', sponsor: 'スポンサー' }[kind] || 'エンブレム', r = 120;
   const look = { originX: 'center', originY: 'center', fill: 'rgba(255,255,255,0.07)', stroke: 'rgba(255,255,255,0.55)', strokeWidth: 3, strokeDashArray: [10, 7] };
   const shape = kind === 'photo' ? new fabric.Rect({ ...look, width: 520, height: 390 })
+    : kind === 'sponsor' ? new fabric.Rect({ ...look, width: 420, height: 160, rx: 14, ry: 14 })
     : kind === 'logo' ? new fabric.Rect({ ...look, width: r * 2, height: r * 2, rx: 18, ry: 18 }) : new fabric.Circle({ ...look, radius: r });
   const txt = new fabric.Text(label, { originX: 'center', originY: 'center', fontFamily: 'Noto Sans JP', fontWeight: 700, fontSize: 34, fill: 'rgba(255,255,255,0.7)' });
   const n = canvas.getObjects().filter(o => o.role === 'slot' && slotKindOf(o) === kind).length;
@@ -2544,7 +2546,7 @@ function textPropsHTML(o) {
 function imagePropsHTML(o) {
   const f = o.fx || {}, slot = slotOf(o), photo = slot && slotKindOf(slot) === 'photo';
   return C.sec('fa-shield-halved', slot ? `${esc((slot.name || '枠').replace(/の枠$/, ''))}を差し替え` : '画像を差し替え',
-      (photo ? '<p class="text-[10px] text-slate-500">写真はドラッグで枠の中の位置を、四隅で大きさを調整できます。</p>' : assetSelectHTML('data-asset-pick', slot ? slotKindOf(slot) : 'emblem', '登録済みのエンブレム・ロゴから選ぶ…')) +
+      (photo ? '<p class="text-[10px] text-slate-500">写真はドラッグで枠の中の位置を、四隅で大きさを調整できます。</p>' : assetSelectHTML('data-asset-pick', slot ? slotKindOf(slot) : 'emblem', '登録済みのエンブレム・ロゴ・スポンサーから選ぶ…')) +
       C.btns([['replaceFile', '<i class="fa-solid fa-upload mr-1"></i>ファイルから差し替え']])) +
     C.sec('fa-palette', 'ロゴ・画像の色を変える',
       C.color('fx_recolor', f.recolor ? '色（透明部分はそのまま）' : '色を選ぶと全体がその色になります', f.recolor || '#ffffff') +
@@ -2561,12 +2563,12 @@ function imagePropsHTML(o) {
       C.btns([['cover', '<i class="fa-solid fa-expand mr-1"></i>全面に敷く'], ['contain', '<i class="fa-solid fa-compress mr-1"></i>全体を表示'], ['fit80', '80%サイズ'], ['zoomShow', '<i class="fa-solid fa-magnifying-glass-minus mr-1"></i>四隅が見えるよう縮小表示']]) +
       C.color('fx_tintColor', 'カラー重ねの色', f.tintColor || S.team.primary));
 }
-const SLOT_KINDS = [['emblem', 'エンブレム'], ['logo', 'ロゴ'], ['photo', '写真（枠いっぱいに切り抜き）']];
+const SLOT_KINDS = [['emblem', 'エンブレム'], ['logo', 'ロゴ'], ['sponsor', 'スポンサー'], ['photo', '写真（枠いっぱいに切り抜き）']];
 function slotPropsHTML(o) {
   const photo = slotKindOf(o) === 'photo';
   return C.sec('fa-image', '画像の枠',
     `<p class="text-[11px] text-slate-400 leading-relaxed">${esc((o.name || '枠').replace(/の枠$/, ''))}を入れる枠です。${o.filled ? '画像が入っています（選ぶと差し替えます）。' : 'ここに画像を入れられます。'}</p>` +
-    (photo ? '' : assetSelectHTML('data-asset-pick', slotKindOf(o), '登録済みのエンブレム・ロゴから選ぶ…')) +
+    (photo ? '' : assetSelectHTML('data-asset-pick', slotKindOf(o), '登録済みのエンブレム・ロゴ・スポンサーから選ぶ…')) +
     C.btns([['slotUpload', `<i class="fa-solid fa-upload mr-1"></i>この枠に${photo ? '写真' : '画像'}を入れる`]]) +
     (CUR.kind === 'preset' ? `<div class="mt-2">${C.select('slotKind', '入れる画像の種類', SLOT_KINDS, slotKindOf(o))}</div>` +
       `<p class="text-[10px] text-slate-500 leading-relaxed">枠は四隅をドラッグして大きさを変えられます。投稿でこのデザインを使うと、アップロードした画像や登録済みのエンブレム・ロゴがこの枠に収まります。</p>` : ''));
@@ -3406,7 +3408,7 @@ const MASTERS_DEFAULT = {
 let MASTERS = { ...JSON.parse(JSON.stringify(MASTERS_DEFAULT)), ...store.get('masters', {}) };
 /* registered emblems & logos (shared): { id, name, kind: 'emblem' | 'logo', url } */
 let ASSETS = store.get('assets', []);
-const ASSET_KINDS = [['emblem', 'エンブレム'], ['logo', 'ロゴ']];
+const ASSET_KINDS = [['emblem', 'エンブレム'], ['logo', 'ロゴ'], ['sponsor', 'スポンサー']];
 const assetById = id => ASSETS.find(a => a.id === id);
 /* edits start from the latest shared list, so two STAFF registering at once don't drop each other's */
 async function mutateAssets(fn) {
