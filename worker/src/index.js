@@ -7,7 +7,7 @@
 const SESSION_MS = 14 * 24 * 3600 * 1000;
 const MAX_DOC_CHARS = 1_900_000; // D1 keeps rows up to 2 MB
 const MAX_IMAGE_BYTES = 1_950_000;
-const SETTING_NAMES = ['team', 'types', 'tagGroups', 'infoFields', 'mentions'];
+const SETTING_NAMES = ['team', 'types', 'tagGroups', 'infoFields', 'mentions', 'assets'];
 const KINDS = new Set(['post', 'preset']);
 
 const enc = new TextEncoder();

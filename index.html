@@ -116,6 +116,7 @@
   .ratio-btn:hover { color: #fff; }
 
   #stage { background-color: #0b0d12; background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,.06) 1px, transparent 0); background-size: 22px 22px; }
+  .checker { background: repeating-conic-gradient(#2a2e38 0 25%, #1c1f27 0 50%) 0 0 / 16px 16px; }
   #designFrame { position:absolute; box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08); pointer-events:none; }
   #dropOverlay { display:none; }
   #stage.dragging #dropOverlay { display:flex; }
@@ -235,9 +236,26 @@
 <!-- ============ HOME (POST LIST) ============ -->
 <section id="viewHome" class="only-home h-[calc(100vh-56px)] overflow-y-auto">
   <div class="max-w-[1180px] mx-auto px-6 py-8">
-    <div class="seg w-[360px] mb-6" id="homeTabs">
+    <div class="seg w-[540px] max-w-full mb-6" id="homeTabs">
       <button class="on !py-2" data-home="posts"><i class="fa-regular fa-images mr-1.5"></i>投稿リスト</button>
       <button class="!py-2" data-home="presets"><i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i>デザインプリセット</button>
+      <button class="!py-2" data-home="assets"><i class="fa-solid fa-shield-halved mr-1.5"></i>エンブレム・ロゴ</button>
+    </div>
+
+    <div id="homeAssets" class="hidden">
+      <div class="flex items-end justify-between gap-4 mb-6">
+        <div>
+          <div class="font-display text-5xl text-white leading-none">EMBLEMS <span class="text-accent">&amp; LOGOS</span></div>
+          <p class="text-xs text-slate-400 mt-2">チームや対戦相手のエンブレム、ロゴを登録します。登録した画像は編集画面のドロップダウンから選んで、枠に入れたり差し替えたりできます（STAFF全員で共有）。</p>
+        </div>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-4 mb-6 flex flex-wrap items-end gap-3">
+        <div class="flex-1 min-w-[200px]"><label class="lbl">名前</label><input class="field select-text" id="assetName" placeholder="例：RED HAWKS（空欄ならファイル名）"></div>
+        <div><label class="lbl">種類</label><select class="field !w-auto" id="assetKind"><option value="emblem">エンブレム</option><option value="logo">ロゴ</option></select></div>
+        <label class="btn btn-accent cursor-pointer"><i class="fa-solid fa-upload"></i>画像を選んで登録<input type="file" id="assetFile" accept="image/*" multiple class="hidden"></label>
+        <p class="w-full text-[10px] text-slate-500">背景が透明なPNGがおすすめです。複数選ぶとまとめて登録します（名前はファイル名）。</p>
+      </div>
+      <div id="assetList" class="space-y-6"></div>
     </div>
 
     <div id="homePresets" class="hidden">
@@ -462,6 +480,20 @@
             </label>
             <label class="ctl-row mt-2 text-[11px]"><input type="checkbox" id="multiToSlides" checked>複数選択時は1枚＝1スライドとして追加</label>
             <div class="grid grid-cols-4 gap-1.5 mt-2.5" id="gallery"></div>
+          </div>
+          <div>
+            <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-shield-halved"></i>エンブレム・ロゴ</span>
+              <a href="#/assets" class="tracking-normal normal-case font-normal text-[10px] text-accent hover:underline">登録・管理</a></div>
+            <div class="grid grid-cols-4 gap-1.5" id="assetTiles"></div>
+            <p class="text-[10px] text-slate-500 mt-1.5">押すと空いている枠（選択中の枠）に入ります。</p>
+          </div>
+          <div>
+            <div class="sec-title"><i class="fa-regular fa-circle-dot"></i>画像の枠</div>
+            <div class="grid grid-cols-3 gap-1.5">
+              <div class="tile" data-slot-add="emblem"><i class="fa-regular fa-circle"></i>エンブレム枠</div>
+              <div class="tile" data-slot-add="logo"><i class="fa-regular fa-square"></i>ロゴ枠</div>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-1.5">デザインプリセットに枠を置いておくと、投稿で使うときにエンブレムやロゴがその位置・大きさで入ります。</p>
           </div>
           <div>
             <div class="sec-title"><i class="fa-solid fa-vector-square"></i>基本図形</div>
@@ -1124,7 +1156,7 @@ async function migrateLocalDocs() {
 }
 
 /* shared settings: team, post types & templates, hashtag sets, info fields, mentions */
-const SHARED_KEYS = ['team', 'types', 'tagGroups', 'infoFields', 'mentions'];
+const SHARED_KEYS = ['team', 'types', 'tagGroups', 'infoFields', 'mentions', 'assets'];
 let settingsT = null, settingsQ = {};
 function queueSharedSetting(k, v) {
   if (!REMOTE || !SHARED_KEYS.includes(k) || !adminToken()) return;
@@ -1137,12 +1169,13 @@ function queueSharedSetting(k, v) {
 }
 async function loadSharedSettings() {
   const st = await api('icGetSettings') || {};
-  const now = { team: S.team, types: TYPES, tagGroups, infoFields, mentions };
+  const now = { team: S.team, types: TYPES, tagGroups, infoFields, mentions, assets: ASSETS };
   if (st.team) Object.assign(S.team, st.team);
   if (st.types) TYPES = st.types;
   if (st.tagGroups) tagGroups = st.tagGroups;
   if (st.infoFields) infoFields = withDefaultFields(st.infoFields);
   if (st.mentions) mentions = st.mentions;
+  if (st.assets) { ASSETS = st.assets; renderAssetTiles(); }
   // the first STAFF to open it shares this browser's settings as the starting point
   const missing = SHARED_KEYS.filter(k => st[k] == null);
   if (missing.length) await api('icSaveSettings', { settings: Object.fromEntries(missing.map(k => [k, now[k]])) }).catch(() => {});
@@ -1154,7 +1187,7 @@ const RATIOS = { '1:1': [1080, 1080], '4:5': [1080, 1350], '9:16': [1080, 1920] 
 const MAX_SLIDES = 10;
 const PROPS = ['name', 'role', 'fx', 'fullBleed', 'filled', 'locked', 'selectable', 'evented', 'hasControls',
   'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'perPixelTargetFind', 'splitByGrapheme',
-  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot'];
+  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind'];
 const BADGE_COLORS = ['bg-accent/15 text-accent', 'bg-sky/15 text-sky', 'bg-amber-400/15 text-amber-300', 'bg-violet-400/15 text-violet-300', 'bg-hot/15 text-hot', 'bg-emerald-400/15 text-emerald-300', 'bg-orange-400/15 text-orange-300', 'bg-pink-400/15 text-pink-300'];
 const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇', scorers: "Raise Nakagawa 1', Eito Watanabe 4', Tsukasa Nishikawa 12'" };
 /* post-info fields; the user can add their own (key c_…). Labels double as {placeholder} names. */
@@ -1737,6 +1770,14 @@ function placeInSlot(img, slot) {
   if (slot.slotGhost) slot.set('opacity', 0);
   canvas.getObjects().filter(o => o.role === 'placeholder' && (o.slotFor || 'main') === slotKey(slot)).forEach(o => canvas.remove(o));
 }
+/* after a design change, emblems and logos go back into their slot, or into a free slot of the same kind */
+const keyKind = k => (k === 'main' || k === 'logo' || k === 'sponsor' || /^logo-/.test(k) ? 'logo' : 'emblem');
+function refillSlots(kept) {
+  const free = () => canvas.getObjects().filter(o => o.role === 'slot' && !o.filled);
+  const slotted = kept.filter(img => img.inSlot), rest = [];
+  slotted.forEach(img => { const sl = free().find(o => slotKey(o) === img.inSlot); sl ? placeInSlot(img, sl) : rest.push(img); });
+  rest.forEach(img => { const sl = free().find(o => o.slotId && slotKindOf(o) === keyKind(img.inSlot)); if (sl) placeInSlot(img, sl); });
+}
 const removePhotoPlaceholders = () => canvas.getObjects().filter(o => o.slotFor === 'photo').forEach(o => canvas.remove(o));
 
 /* the user's own presets (store "presets"), referenced on a slide as "c:<id>" */
@@ -1780,10 +1821,7 @@ async function applyPreset(key, opts = {}) {
   kept.forEach(img => { if (img.fullBleed) coverImage(img); canvas.add(img); });
   objs.forEach(o => canvas.add(o));
   if (kept.some(img => img.fullBleed)) removePhotoPlaceholders();
-  kept.filter(img => img.inSlot).forEach(img => {
-    const slot = canvas.getObjects().find(o => o.role === 'slot' && !o.filled && slotKey(o) === img.inSlot);
-    if (slot) placeInSlot(img, slot);
-  });
+  refillSlots(kept);
   const loose = kept.filter(img => !img.fullBleed && !img.inSlot);
   if (res.slot && !res.slot.filled && loose.length) placeInSlot(loose[loose.length - 1], res.slot);
   HIST.lock = false;
@@ -1805,6 +1843,8 @@ async function applyCustomPreset(id, { caption = true, record = true } = {}) {
   if (S.ratio !== target) await setRatio(target, { record: false });
   HIST.lock = true;
   kept.forEach((img, n) => { if (img.fullBleed) coverImage(img); canvas.insertAt(img, 1 + n); });
+  if (kept.some(img => img.fullBleed)) removePhotoPlaceholders();
+  refillSlots(kept);
   if (CUR.kind === 'post') fillTplTexts();
   HIST.lock = false;
   S.lastPreset = 'c:' + id; S.dirty = false;
@@ -1984,13 +2024,13 @@ async function handleFiles(files) {
 }
 /* where an image goes: the slot picked (selected) -> a primary slot (sponsor card) -> the full-bleed
    photo if there is none yet -> the next empty slot (emblems, logo) -> free, at 60 % */
-function addImageFromURL(url, { cover, name, slot: target } = {}) {
+function addImageFromURL(url, { cover, name, slot: target, kind } = {}) {
   return new Promise(res => {
     fabric.Image.fromURL(url, img => {
       img.set({ name: name || '画像', originX: 'center', originY: 'center', left: S.W / 2, top: S.H / 2 });
       const active = canvas.getActiveObject();
       const empty = canvas.getObjects().filter(o => o.role === 'slot' && !o.filled);
-      const pick = target || (active?.role === 'slot' && !active.filled ? active : null) || (!cover ? empty.find(s => s.slotPrimary || !s.slotId) : null);
+      const pick = target || (active?.role === 'slot' && !active.filled ? active : null) || (kind ? empty.find(s => slotKindOf(s) === kind) : null) || (!cover ? empty.find(s => s.slotPrimary || !s.slotId) : null);
       const hasPhoto = canvas.getObjects().some(o => o.type === 'image' && (o.fullBleed || !o.inSlot));
       const slotName = sl => (sl.name || '枠').replace(/の枠$/, '') + 'の画像';
       canvas.add(img);
@@ -2001,9 +2041,65 @@ function addImageFromURL(url, { cover, name, slot: target } = {}) {
       img.setCoords();
       canvas.setActiveObject(img); canvas.requestRenderAll();
       res(img);
-    });
+    }, { crossOrigin: 'anonymous' });
   });
 }
+/* emblem or logo: what a slot expects */
+const slotKindOf = sl => sl.slotKind || (sl.slotId === 'logo' || sl.slotId === 'sponsor' || !sl.slotId ? 'logo' : 'emblem');
+const slotOf = img => img?.inSlot && canvas.getObjects().find(o => o.role === 'slot' && slotKey(o) === img.inSlot);
+/* swap an image's picture, keeping where it sits (its slot, or its box and angle) */
+function replaceImage(o, url, name) {
+  return new Promise(res => fabric.Image.fromURL(url, img => {
+    if (!img || !img.width) { toast('画像を読み込めませんでした', 'fa-triangle-exclamation', 'text-hot'); return res(null); }
+    const slot = slotOf(o), c = o.getCenterPoint(), idx = canvas.getObjects().indexOf(o);
+    img.set({ name: name || o.name, originX: 'center', originY: 'center', opacity: o.opacity, shadow: o.shadow, fromPreset: o.fromPreset });
+    canvas.remove(o);
+    canvas.insertAt(img, Math.max(0, idx));
+    if (slot) placeInSlot(img, slot);
+    else if (o.fullBleed) { coverImage(img); }
+    else {
+      const sc = Math.min(o.getScaledWidth() / img.width, o.getScaledHeight() / img.height);
+      img.set({ left: c.x, top: c.y, angle: o.angle, scaleX: sc, scaleY: sc, flipX: o.flipX, flipY: o.flipY });
+    }
+    img.setCoords();
+    canvas.setActiveObject(img); canvas.requestRenderAll();
+    saveHistory(); refreshLayersSoon(); renderProps();
+    res(img);
+  }, { crossOrigin: 'anonymous' }));
+}
+/* an image picked for a slot: replaces the one already in it, or fills it */
+function fillSlot(slot, url, name) {
+  const cur = canvas.getObjects().find(o => o.type === 'image' && o.inSlot && o.inSlot === slotKey(slot));
+  return cur ? replaceImage(cur, url, name) : addImageFromURL(url, { slot, name });
+}
+const pickFile = () => new Promise(res => {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = async () => { const f = inp.files[0]; if (!f) return res(null); const url = await readImageFile(f); S.images.push(url); renderGallery(); res(url); };
+  inp.click();
+});
+function renderAssetTiles() {
+  $('#assetTiles').innerHTML = ASSETS.length ? ASSETS.map(a => `<button class="aspect-square rounded-md overflow-hidden border border-line hover:border-accent checker flex items-center justify-center" data-asset-add="${a.id}" title="${esc(a.name)}"><img src="${esc(a.url)}" class="max-w-[85%] max-h-[85%] object-contain" loading="lazy"></button>`).join('')
+    : '<p class="col-span-4 text-[11px] text-slate-500">まだ登録がありません</p>';
+}
+$('#assetTiles').addEventListener('click', e => {
+  const b = e.target.closest('[data-asset-add]'); if (!b) return;
+  const a = assetById(b.dataset.assetAdd), act = canvas.getActiveObject();
+  if (!a) return;
+  if (act?.role === 'slot') fillSlot(act, a.url, a.name);
+  else addImageFromURL(a.url, { cover: false, name: a.name, kind: a.kind });
+});
+/* an empty emblem / logo frame for a design preset (a group, so the label moves with it) */
+function addSlotFrame(kind) {
+  const label = kind === 'logo' ? 'ロゴ' : 'エンブレム', r = 120;
+  const look = { originX: 'center', originY: 'center', fill: 'rgba(255,255,255,0.07)', stroke: 'rgba(255,255,255,0.55)', strokeWidth: 3, strokeDashArray: [10, 7] };
+  const shape = kind === 'logo' ? new fabric.Rect({ ...look, width: r * 2, height: r * 2, rx: 18, ry: 18 }) : new fabric.Circle({ ...look, radius: r });
+  const txt = new fabric.Text(label, { originX: 'center', originY: 'center', fontFamily: 'Noto Sans JP', fontWeight: 700, fontSize: 34, fill: 'rgba(255,255,255,0.7)' });
+  const n = canvas.getObjects().filter(o => o.role === 'slot' && slotKindOf(o) === kind).length;
+  addObj(new fabric.Group([shape, txt], { role: 'slot', slotId: kind + '-' + uid().slice(-6), slotKind: kind, slotGhost: true, slotPad: 2, name: label + (n ? n + 1 : '') + 'の枠' }));
+  S.dirty = true;
+}
+$$('[data-slot-add]').forEach(t => t.addEventListener('click', () => addSlotFrame(t.dataset.slotAdd)));
 function renderGallery() {
   $('#gallery').innerHTML = S.images.map((u, i) => `<button class="aspect-square rounded-md overflow-hidden border border-line hover:border-accent" data-img="${i}" title="もう一度配置"><img src="${u}" class="w-full h-full object-cover"></button>`).join('');
 }
@@ -2161,8 +2257,8 @@ function renderProps() {
   let h = '';
   if (o.type === 'textbox') h = textPropsHTML(o);
   else if (o.type === 'image') h = imagePropsHTML(o);
+  else if (o.role === 'slot') h = slotPropsHTML(o) + (o.type === 'group' ? '' : shapePropsHTML(o));
   else if (o.type === 'group') h = groupPropsHTML(o);
-  else if (o.role === 'slot') h = slotPropsHTML(o) + shapePropsHTML(o);
   else h = shapePropsHTML(o);
   el.innerHTML = h;
 }
@@ -2254,8 +2350,11 @@ function textPropsHTML(o) {
       C.color('bgColor', '文字背景色', o.backgroundColor || o.textBackgroundColor || S.team.accent));
 }
 function imagePropsHTML(o) {
-  const f = o.fx || {};
-  return C.sec('fa-wand-magic-sparkles', 'フィルタープリセット',
+  const f = o.fx || {}, slot = slotOf(o);
+  return C.sec('fa-shield-halved', slot ? `${esc((slot.name || '枠').replace(/の枠$/, ''))}を差し替え` : '画像を差し替え',
+      assetSelectHTML('data-asset-pick', slot ? slotKindOf(slot) : 'emblem', '登録済みのエンブレム・ロゴから選ぶ…') +
+      C.btns([['replaceFile', '<i class="fa-solid fa-upload mr-1"></i>ファイルから差し替え']])) +
+    C.sec('fa-wand-magic-sparkles', 'フィルタープリセット',
       `<div class="grid grid-cols-4 gap-1">${Object.keys(FX_PRESETS).map(k => `<button class="mini-btn !px-1" data-act="fx:${k}">${FX_LABEL[k]}</button>`).join('')}</div>` +
       `<button class="mini-btn" data-act="toCraft"><i class="fa-solid fa-camera-retro mr-1 text-accent"></i>PhotoCraftで本格編集</button>`) +
     C.sec('fa-sun', '色調補正',
@@ -2269,8 +2368,11 @@ function imagePropsHTML(o) {
 }
 function slotPropsHTML(o) {
   return C.sec('fa-image', '画像の枠',
-    `<p class="text-[11px] text-slate-400 leading-relaxed">${esc((o.name || '枠').replace(/の枠$/, ''))}を入れる枠です。${o.filled ? '画像が入っています。' : 'ここに画像を入れられます。'}</p>` +
-    C.btns([['slotUpload', '<i class="fa-solid fa-upload mr-1"></i>この枠に画像を入れる']]));
+    `<p class="text-[11px] text-slate-400 leading-relaxed">${esc((o.name || '枠').replace(/の枠$/, ''))}を入れる枠です。${o.filled ? '画像が入っています（選ぶと差し替えます）。' : 'ここに画像を入れられます。'}</p>` +
+    assetSelectHTML('data-asset-pick', slotKindOf(o), '登録済みのエンブレム・ロゴから選ぶ…') +
+    C.btns([['slotUpload', '<i class="fa-solid fa-upload mr-1"></i>この枠に画像を入れる']]) +
+    (CUR.kind === 'preset' ? `<div class="mt-2">${C.select('slotKind', '入れる画像の種類', ASSET_KINDS, slotKindOf(o))}</div>` +
+      `<p class="text-[10px] text-slate-500 leading-relaxed">枠は四隅をドラッグして大きさを変えられます。投稿でこのデザインを使うと、アップロードした画像や登録済みのエンブレム・ロゴがこの枠に収まります。</p>` : ''));
 }
 function shapePropsHTML(o) {
   const noFill = !o.fill || (typeof o.fill === 'string' && /rgba\(.*,\s*0\)$/.test(o.fill.replace(/\s/g, '')));
@@ -2316,6 +2418,7 @@ function setProp(k, v) {
   if (!o) return;
   const each = fn => (o.type === 'activeSelection' ? o.getObjects() : [o]).forEach(fn);
   const ensureShadow = () => { if (!o.shadow) o.set('shadow', sh('rgba(0,0,0,0.6)', 20, 0, 6)); return o.shadow; };
+  if (k === 'slotKind') { setSlotKind(o, v); return; }
   switch (k) {
     case 'text': o.set('text', v); textEdited(o); refreshLayersSoon(); break;
     case 'fontFamily': o.set('fontFamily', v); break;
@@ -2351,6 +2454,7 @@ function setProp(k, v) {
   canvas.requestRenderAll();
   markDirty(o); saveHistory();
 }
+function setSlotKind(o, v) { o.slotKind = v; S.dirty = true; saveHistory(); }
 function propAction(act) {
   const o = canvas.getActiveObject();
   const [a, v] = act.split(':');
@@ -2363,13 +2467,8 @@ function propAction(act) {
     case 'align': o.set('textAlign', v); break;
     case 'bg': { const c = toHex(o.backgroundColor || o.textBackgroundColor || S.team.accent); o.set({ backgroundColor: v === 'box' ? c : '', textBackgroundColor: v === 'line' ? c : '' }); break; }
     case 'fx': applyFxPreset(v, o); return;
-    case 'slotUpload': {
-      const inp = document.createElement('input');
-      inp.type = 'file'; inp.accept = 'image/*';
-      inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const url = await readImageFile(f); S.images.push(url); renderGallery(); await addImageFromURL(url, { slot: o }); };
-      inp.click();
-      return;
-    }
+    case 'slotUpload': pickFile().then(url => url && fillSlot(o, url)); return;
+    case 'replaceFile': pickFile().then(url => url && replaceImage(o, url)); return;
     case 'cover': coverImage(o); canvas.moveTo(o, 1); break;
     case 'zoomShow': zoomToShow(o); return;
     case 'contain': { const s = Math.min(S.W / o.width, S.H / o.height); o.set({ scaleX: s, scaleY: s, angle: 0, fullBleed: false }); o.setPositionByOrigin(new fabric.Point(S.W / 2, S.H / 2), 'center', 'center'); break; }
@@ -2407,6 +2506,11 @@ propsEl.addEventListener('input', e => {
   if (e.target.type === 'range') outLabel(k, e.target.value);
 });
 propsEl.addEventListener('change', e => {
+  if (e.target.matches('[data-asset-pick]')) {
+    const a = assetById(e.target.value), o = canvas.getActiveObject();
+    if (a && o) o.role === 'slot' ? fillSlot(o, a.url, a.name) : replaceImage(o, a.url, a.name);
+    return;
+  }
   const k = e.target.dataset.k; if (!k) return;
   if (e.target.tagName === 'SELECT') setProp(k, e.target.value);
   if (e.target.type === 'checkbox') setProp(k, e.target.checked);
@@ -2891,6 +2995,89 @@ $('#btnReapply').addEventListener('click', async () => {
 });
 
 /* ---------------- mentions ---------------- */
+/* registered emblems & logos (shared): { id, name, kind: 'emblem' | 'logo', url } */
+let ASSETS = store.get('assets', []);
+const ASSET_KINDS = [['emblem', 'エンブレム'], ['logo', 'ロゴ']];
+const assetById = id => ASSETS.find(a => a.id === id);
+/* edits start from the latest shared list, so two STAFF registering at once don't drop each other's */
+async function mutateAssets(fn) {
+  if (REMOTE) { const st = await api('icGetSettings').catch(() => null); if (st?.assets) ASSETS = st.assets; }
+  fn(ASSETS);
+  store.set('assets', ASSETS);
+}
+/* emblems stay crisp and transparent: PNG, at most 800px */
+function assetDataURL(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const im = new Image();
+      im.onload = () => {
+        const sc = Math.min(1, 800 / Math.max(im.width, im.height));
+        const c = document.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        res(c.toDataURL('image/png'));
+      };
+      im.onerror = rej; im.src = fr.result;
+    };
+    fr.onerror = rej; fr.readAsDataURL(file);
+  });
+}
+async function registerAssets(files) {
+  files = [...files].filter(f => f.type.startsWith('image/'));
+  if (!files.length) return;
+  const kind = $('#assetKind').value, typed = $('#assetName').value.trim();
+  const added = [];
+  try {
+    for (const f of files) {
+      const data = await assetDataURL(f);
+      const url = REMOTE ? await uploadImage(data) : data;
+      added.push({ id: uid(), name: (files.length === 1 && typed) || f.name.replace(/\.[^.]+$/, ''), kind, url });
+    }
+  } catch (e) { return toast('登録できませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 4000); }
+  await mutateAssets(list => list.push(...added));
+  $('#assetName').value = '';
+  renderAssetList();
+  toast(`${added.length}件を登録しました`, 'fa-shield-halved');
+}
+async function renderAssetList(refresh) {
+  if (refresh && REMOTE) { const st = await api('icGetSettings').catch(() => null); if (st?.assets) ASSETS = st.assets; }
+  renderAssetTiles();
+  $('#assetList').innerHTML = ASSET_KINDS.map(([kind, label]) => {
+    const list = ASSETS.filter(a => a.kind === kind);
+    return `<div><div class="sec-title">${label}（${list.length}）</div>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-3">${list.length ? list.map(a => `
+        <div class="bg-panel border border-line rounded-xl p-2.5 flex flex-col gap-2" data-asset="${a.id}">
+          <div class="aspect-square rounded-lg checker flex items-center justify-center overflow-hidden"><img src="${esc(a.url)}" class="max-w-[85%] max-h-[85%] object-contain" loading="lazy"></div>
+          <input class="field !py-1 !text-[12px] select-text" data-asset-name value="${esc(a.name)}" title="名前（変更すると保存）">
+          <div class="flex gap-1.5">
+            <select class="field !py-1 !text-[11px]" data-asset-kind>${ASSET_KINDS.map(([v, l]) => `<option value="${v}" ${v === a.kind ? 'selected' : ''}>${l}</option>`).join('')}</select>
+            <button class="btn !px-2 hover:!border-hot hover:!text-hot" data-asset-del title="削除"><i class="fa-regular fa-trash-can"></i></button>
+          </div>
+        </div>`).join('') : `<p class="text-[11px] text-slate-500 col-span-full">まだ登録がありません</p>`}</div></div>`;
+  }).join('');
+}
+$('#assetFile').addEventListener('change', e => { registerAssets(e.target.files); e.target.value = ''; });
+$('#assetList').addEventListener('change', async e => {
+  const card = e.target.closest('[data-asset]'); if (!card) return;
+  const id = card.dataset.asset;
+  if (e.target.matches('[data-asset-name]')) { const name = e.target.value.trim(); if (name) await mutateAssets(list => { const a = list.find(x => x.id === id); if (a) a.name = name; }); }
+  if (e.target.matches('[data-asset-kind]')) await mutateAssets(list => { const a = list.find(x => x.id === id); if (a) a.kind = e.target.value; });
+  renderAssetList();
+});
+$('#assetList').addEventListener('click', async e => {
+  const b = e.target.closest('[data-asset-del]'); if (!b) return;
+  const a = assetById(b.closest('[data-asset]').dataset.asset);
+  if (!a || !confirm(`「${a.name}」を削除しますか？\n（すでに投稿に入っている画像はそのまま残ります）`)) return;
+  await mutateAssets(list => { const i = list.findIndex(x => x.id === a.id); if (i >= 0) list.splice(i, 1); });
+  renderAssetList();
+});
+/* a dropdown of the registry; the kind asked for comes first */
+function assetSelectHTML(attr, kind, placeholder) {
+  const kinds = [...ASSET_KINDS].sort((x, y) => (y[0] === kind) - (x[0] === kind));
+  const groups = kinds.map(([k, l]) => { const list = ASSETS.filter(a => a.kind === k); return list.length ? `<optgroup label="${l}">${list.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</optgroup>` : ''; }).join('');
+  return `<select class="field !py-1" ${attr}><option value="">${placeholder}</option>${groups}</select>` +
+    (ASSETS.length ? '' : `<p class="text-[10px] text-slate-500 mt-1">登録がまだありません。ホームの「エンブレム・ロゴ」から登録できます。</p>`);
+}
 let mentions = store.get('mentions', [
   { handle: 'yamada_10', name: '#10 山田 太郎' }, { handle: 'sato_gk1', name: '#1 佐藤 健' }, { handle: 'coach_tanaka', name: '監督 田中' }
 ]);
@@ -3765,9 +3952,10 @@ function showHomeTab(tab) {
   $$('#homeTabs [data-home]').forEach(b => b.classList.toggle('on', b.dataset.home === tab));
   $('#homePosts').classList.toggle('hidden', tab !== 'posts');
   $('#homePresets').classList.toggle('hidden', tab !== 'presets');
-  tab === 'presets' ? renderPresetList() : renderHome();
+  $('#homeAssets').classList.toggle('hidden', tab !== 'assets');
+  tab === 'presets' ? renderPresetList() : tab === 'assets' ? renderAssetList(true) : renderHome();
 }
-$('#homeTabs').addEventListener('click', e => { const b = e.target.closest('[data-home]'); if (b) location.hash = b.dataset.home === 'presets' ? '#/presets' : ''; });
+$('#homeTabs').addEventListener('click', e => { const b = e.target.closest('[data-home]'); if (b) location.hash = b.dataset.home === 'posts' ? '' : '#/' + b.dataset.home; });
 async function renderPresetList() {
   await loadCustomPresets();
   const used = [...new Set(CUSTOM.map(p => p.type))];
@@ -3996,7 +4184,7 @@ async function route() {
   if (m) {
     const kind = m[1], id = m[2];
     if (CUR.post?.id !== id || CUR.kind !== kind) { if (CUR.post) await savePostNow(); await openDoc(kind, id); }
-  } else await closePost(location.hash === '#/presets' ? 'presets' : 'posts');
+  } else await closePost(location.hash === '#/presets' ? 'presets' : location.hash === '#/assets' ? 'assets' : 'posts');
 }
 window.addEventListener('hashchange', route);
 $('#btnBack').addEventListener('click', () => { location.hash = CUR.kind === 'preset' ? '#/presets' : ''; });
@@ -4051,7 +4239,7 @@ document.addEventListener('keydown', e => {
   bindTeam();
   await loadCustomPresets();
   renderTypeSelects(); renderInfoFields();
-  renderPresetCards(); renderBgPane(); renderTagGroups(); renderMentions(); renderGallery(); renderQuickTools();
+  renderPresetCards(); renderBgPane(); renderTagGroups(); renderMentions(); renderGallery(); renderAssetTiles(); renderQuickTools();
   renderIgChip(); updatePreviewMeta();
   renderVariants(); syncObjBar();
   initFolds(); applyLayout(false);
