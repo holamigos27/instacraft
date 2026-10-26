@@ -1420,8 +1420,8 @@ const PRESETS = {
       o.push(T('@' + t.account, { originX: 'right', originY: 'top', left: W - 64, top: H * 0.06, width: 340, textAlign: 'right', fontFamily: 'Oswald', fontWeight: 500, fontSize: 26 * k, fill: 'rgba(255,255,255,0.8)', name: 'アカウント' }));
       o.push(T('MATCH', { originX: 'left', originY: 'top', left: 60, top: H * 0.06 + 50 * k, width: W - 100, textAlign: 'left', fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 300 * k, lineHeight: 0.85, fill: '#ffffff', charSpacing: 20, shadow: sh('rgba(0,0,0,0.45)', 30, 0, 10), name: 'MATCH' }));
       o.push(T('DAY', { originX: 'left', originY: 'top', left: 60, top: H * 0.06 + 300 * k, width: W - 100, textAlign: 'left', fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 300 * k, lineHeight: 0.85, fill: t.accent, charSpacing: 20, shadow: sh('rgba(0,0,0,0.45)', 30, 0, 10), name: 'DAY' }));
-      o.push(T(t.name, { left: W * 0.24, top: yv, width: 400, fontFamily: 'Oswald', fontWeight: 700, fontSize: 50 * k, name: '自チーム名', shadow: sh('rgba(0,0,0,0.6)', 14, 0, 4) }));
-      o.push(T(i.opponent, { left: W * 0.76, top: yv, width: 400, fontFamily: 'Oswald', fontWeight: 700, fontSize: 50 * k, name: '対戦相手', shadow: sh('rgba(0,0,0,0.6)', 14, 0, 4) }));
+      o.push(T(t.name, { left: W * 0.76, top: yv, width: 400, fontFamily: 'Oswald', fontWeight: 700, fontSize: 50 * k, name: '自チーム名', shadow: sh('rgba(0,0,0,0.6)', 14, 0, 4) }));
+      o.push(T(i.opponent, { left: W * 0.24, top: yv, width: 400, fontFamily: 'Oswald', fontWeight: 700, fontSize: 50 * k, name: '対戦相手', shadow: sh('rgba(0,0,0,0.6)', 14, 0, 4) }));
       o.push(P.circle({ left: W / 2, top: yv, radius: 72 * k, fill: t.accent, shadow: sh(hexA(t.accent, 0.6), 40), name: 'VSサークル' }));
       o.push(T('VS', { left: W / 2, top: yv + 5 * k, width: 200, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 92 * k, fill: t.secondary, name: 'VS' }));
       o.push(P.poly([{ x: 0, y: barTop }, { x: W * 0.92, y: barTop }, { x: W * 0.86, y: barTop + barH }, { x: 0, y: barTop + barH }], { fill: t.accent, name: '情報バー' }));
@@ -1447,11 +1447,11 @@ const PRESETS = {
       o.push(T('RESULT', { originY: 'top', left: W / 2, top: pillTop + 92 * k, width: W, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 230 * k, lineHeight: 0.85, charSpacing: 60, shadow: sh('rgba(0,0,0,0.5)', 30, 0, 10), name: 'RESULT' }));
       const sy = H * 0.52;
       o.push(T('FULL TIME', { left: W / 2, top: sy - 200 * k, width: 600, fontFamily: 'Oswald', fontWeight: 500, fontSize: 30 * k, fill: 'rgba(255,255,255,0.7)', charSpacing: 500, name: 'FULL TIME' }));
-      o.push(T(i.scoreUs, { left: W * 0.27, top: sy, width: 360, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 360 * k, lineHeight: 0.85, fill: t.accent, shadow: sh(hexA(t.accent, 0.45), 50), name: 'スコア（自）' }));
+      o.push(T(i.scoreUs, { left: W * 0.73, top: sy, width: 360, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 360 * k, lineHeight: 0.85, fill: t.accent, shadow: sh(hexA(t.accent, 0.45), 50), name: 'スコア（自）' }));
       o.push(T('-', { left: W / 2, top: sy, width: 160, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 200 * k, lineHeight: 0.85, name: 'ハイフン' }));
-      o.push(T(i.scoreThem, { left: W * 0.73, top: sy, width: 360, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 360 * k, lineHeight: 0.85, name: 'スコア（相手）' }));
-      o.push(T(t.name, { left: W * 0.27, top: sy + 190 * k, width: 420, fontFamily: 'Oswald', fontWeight: 700, fontSize: 40 * k, name: '自チーム名' }));
-      o.push(T(i.opponent, { left: W * 0.73, top: sy + 190 * k, width: 420, fontFamily: 'Oswald', fontWeight: 700, fontSize: 40 * k, name: '対戦相手' }));
+      o.push(T(i.scoreThem, { left: W * 0.27, top: sy, width: 360, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 360 * k, lineHeight: 0.85, name: 'スコア（相手）' }));
+      o.push(T(t.name, { left: W * 0.73, top: sy + 190 * k, width: 420, fontFamily: 'Oswald', fontWeight: 700, fontSize: 40 * k, name: '自チーム名' }));
+      o.push(T(i.opponent, { left: W * 0.27, top: sy + 190 * k, width: 420, fontFamily: 'Oswald', fontWeight: 700, fontSize: 40 * k, name: '対戦相手' }));
       o.push(P.rect({ originX: 'center', left: W / 2, top: H * 0.855, width: 120, height: 6, fill: t.accent, name: 'ライン' }));
       o.push(T(`${i.date}  |  ${i.venue}`, { originY: 'top', left: W / 2, top: H * 0.875, width: W - 160, fontFamily: 'Noto Sans JP', fontWeight: 500, fontSize: 30 * k, fill: '#cfd5e2', name: '日付・会場' }));
       return o;
@@ -1530,12 +1530,11 @@ const PRESETS = {
     build(ctx) {
       const { W, H, i, k } = ctx;
       const o = photoFrame(ctx, 'FULL TIME');
-      const y = H * 0.855;
-      o.push(...emblemSlot(W * 0.22, y, 74 * k, 'home', 'エンブレム'));
-      o.push(...emblemSlot(W * 0.78, y, 74 * k, 'away', '相手エンブレム'));
-      o.push(T(`${i.scoreUs} - ${i.scoreThem}`, { left: W / 2, top: y + 4 * k, width: 420, fontFamily: 'Anton', fontWeight: 400, fontSize: 132 * k, skewX: -10, charSpacing: 40, name: 'スコア' }));
-      const scorers = String(i.scorers || '').split(/\s*[,、，\/／\n]\s*/).filter(Boolean).join('\n');
-      o.push(T(scorers || ' ', { originX: 'left', originY: 'top', left: W * 0.58, top: H * 0.905, width: W * 0.34, textAlign: 'left', fontFamily: 'Oswald', fontWeight: 500, fontSize: 21 * k, lineHeight: 1.35, name: '得点者' }));
+      const y = H * 0.845;
+      o.push(...emblemSlot(W * 0.78, y, 74 * k, 'home', 'エンブレム'));
+      o.push(...emblemSlot(W * 0.22, y, 74 * k, 'away', '相手エンブレム'));
+      o.push(T(`${i.scoreThem} - ${i.scoreUs}`, { left: W / 2, top: y + 4 * k, width: 460, fontFamily: 'Anton', fontWeight: 400, fontSize: 132 * k, charSpacing: 40, name: 'スコア' }));
+      o.push(...scorerTexts(ctx, String(i.scorers || '').split(/\s*[,、，\/／\n]\s*/).filter(Boolean)));
       return o.concat(logoSlot(ctx));
     }
   },
@@ -1547,9 +1546,9 @@ const PRESETS = {
       const { W, H, i, k } = ctx;
       const o = photoFrame(ctx, 'MATCH DAY');
       const y = H * 0.835;
-      o.push(...emblemSlot(W * 0.22, y, 66 * k, 'home', 'エンブレム'));
-      o.push(...emblemSlot(W * 0.78, y, 66 * k, 'away', '相手エンブレム'));
-      o.push(T('VS', { left: W / 2, top: y + 4 * k, width: 260, fontFamily: 'Anton', fontWeight: 400, fontSize: 104 * k, skewX: -10, name: 'VS' }));
+      o.push(...emblemSlot(W * 0.78, y, 66 * k, 'home', 'エンブレム'));
+      o.push(...emblemSlot(W * 0.22, y, 66 * k, 'away', '相手エンブレム'));
+      o.push(T('VS', { left: W / 2, top: y + 4 * k, width: 260, fontFamily: 'Anton', fontWeight: 400, fontSize: 104 * k, name: 'VS' }));
       o.push(T(`${i.date}  ${i.time} KICK OFF`, { left: W / 2, top: H * 0.915, width: W - 160, fontFamily: 'Oswald', fontWeight: 700, fontSize: 36 * k, charSpacing: 60, name: '日時' }));
       o.push(T(`@ ${i.venue}`, { left: W / 2, top: H * 0.953, width: W - 160, fontFamily: 'Noto Sans JP', fontWeight: 700, fontSize: 24 * k, fill: PH.blue, name: '会場' }));
       return o.concat(logoSlot(ctx));
@@ -1607,28 +1606,54 @@ const PH = {
 };
 const bar = (x, y, w, h, fill, name = 'ライン') => P.rect({ left: x, top: y, width: w, height: h, fill, angle: 2.5, name });
 /* photo area (until a photo is in), slanted dark panel, accent bars, vertical match line, big title */
+const TILT = 4.5; // degrees: the title, its white lines and the photo's lower edge all slope down to the right
 function photoFrame({ W, H, t, i, k }, title, size = 138) {
   const o = [];
-  const py = H * 0.735;
-  o.push(P.rect({ left: 0, top: 0, width: W, height: py + H * 0.04, fill: vGrad(py + H * 0.04, [[0, '#454955'], [1, '#1b1c22']]), role: 'placeholder', slotFor: 'photo', evented: false, name: '写真エリア' }));
+  const fs = size * k, rad = TILT * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad), tan = Math.tan(rad);
+  const cx = W / 2, cy = H * 0.722;
+  // a point (u along the title, v across it) of the tilted band, on the canvas
+  const at = (u, v) => ({ x: cx + u * cos - v * sin, y: cy + u * sin + v * cos });
+  const edge = at(0, fs * 0.5); // the panel's top edge runs just under the title
+  const edgeY = x => edge.y + (x - edge.x) * tan;
+  o.push(P.rect({ left: 0, top: 0, width: W, height: edgeY(W) + 4, fill: vGrad(edgeY(W) + 4, [[0, '#454955'], [1, '#1b1c22']]), role: 'placeholder', slotFor: 'photo', evented: false, name: '写真エリア' }));
   o.push(T('PHOTO\n最初にアップロードした写真が、ここに全面で入ります', { left: W / 2, top: H * 0.36, width: W - 240, fontFamily: 'Noto Sans JP', fontWeight: 700, fontSize: 28 * k, lineHeight: 1.7, fill: 'rgba(255,255,255,0.45)', splitByGrapheme: true, role: 'placeholder', slotFor: 'photo', evented: false, name: '写真の案内' }));
-  o.push(P.rect({ left: 0, top: py - H * 0.22, width: W, height: H * 0.24, fill: vGrad(H * 0.24, [[0, 'rgba(12,12,15,0)'], [1, 'rgba(12,12,15,0.9)']]), perPixelTargetFind: true, name: '写真の下の影' }));
+  o.push(P.rect({ left: 0, top: edgeY(0) - H * 0.2, width: W, height: H * 0.2 + (edgeY(W) - edgeY(0)) + 4, fill: vGrad(H * 0.2 + (edgeY(W) - edgeY(0)) + 4, [[0, 'rgba(12,12,15,0)'], [1, 'rgba(12,12,15,0.85)']]), perPixelTargetFind: true, name: '写真の下の影' }));
   o.push(P.poly([{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H * 0.018 }, { x: 0, y: H * 0.066 }], { fill: PH.dark, name: '上の帯' }));
-  o.push(P.poly([{ x: 0, y: py - H * 0.012 }, { x: W, y: py + H * 0.03 }, { x: W, y: H }, { x: 0, y: H }], { fill: PH.dark, name: '下のパネル' }));
+  o.push(P.poly([{ x: 0, y: edgeY(0) }, { x: W, y: edgeY(W) }, { x: W, y: H }, { x: 0, y: H }], { fill: PH.dark, name: '下のパネル' }));
   o.push(bar(0, H * 0.038, W * 0.31, 13 * k, PH.red));
   o.push(bar(W * 0.62, H * 0.088, W * 0.4, 74 * k, PH.green));
   o.push(bar(W * 0.83, H * 0.172, W * 0.19, 16 * k, PH.blue));
-  o.push(bar(0, H * 0.758, W * 0.16, 30 * k, PH.green));
-  o.push(bar(0, H * 0.802, W * 0.08, 9 * k, PH.red));
+  o.push(bar(0, edgeY(0) + H * 0.03, W * 0.16, 30 * k, PH.green));
+  o.push(bar(0, edgeY(0) + H * 0.075, W * 0.08, 9 * k, PH.red));
   o.push(bar(W * 0.84, H * 0.83, W * 0.17, 13 * k, PH.blue));
   o.push(bar(W * 0.885, H * 0.896, W * 0.12, 9 * k, PH.red));
   o.push(bar(W * 0.945, H * 0.925, W * 0.06, 9 * k, PH.blue));
-  o.push(T(`${i.date}  ${t.name} vs ${i.opponent}`, { left: W * 0.94, top: H * 0.45, width: H * 0.46, angle: 90, fontFamily: 'Oswald', fontWeight: 500, fontSize: 24 * k, fill: 'rgba(255,255,255,0.85)', charSpacing: 160, name: '縦の試合情報' }));
-  const ty = py - 4 * k;
-  o.push(P.rect({ left: 0, top: ty - 10 * k, width: W * 0.27, height: 4, fill: '#ffffff', angle: 1.5, name: '左の線' }));
-  o.push(P.rect({ left: W * 0.71, top: ty + 6 * k, width: W * 0.3, height: 4, fill: '#ffffff', angle: 1.5, name: '右の線' }));
-  o.push(T(title, { left: W / 2, top: ty, width: W * 0.8, fontFamily: 'Anton', fontWeight: 400, fontSize: size * k, skewX: -10, charSpacing: 10, shadow: sh('rgba(0,0,0,0.45)', 20, 0, 6), name: title }));
+  o.push(T(`${i.date}  ${i.opponent} vs ${t.name}`, { left: W * 0.94, top: H * 0.43, width: H * 0.42, angle: 90, fontFamily: 'Oswald', fontWeight: 500, fontSize: 24 * k, fill: 'rgba(255,255,255,0.85)', charSpacing: 160, name: '縦の試合情報' }));
+  // white lines: the left one meets the title low, the right one leaves it high (as on the card)
+  const tw = new fabric.Text(title, { fontFamily: 'Anton', fontSize: fs, charSpacing: 10 }).width;
+  const gap = 18 * k, lineH = 5 * k;
+  const l = at(-tw / 2 - gap, fs * 0.26), r = at(tw / 2 + gap, -fs * 0.34);
+  o.push(P.rect({ originX: 'right', originY: 'center', left: l.x, top: l.y, width: l.x / cos + 40, height: lineH, angle: TILT, fill: '#ffffff', name: '左の線' }));
+  o.push(P.rect({ originX: 'left', originY: 'center', left: r.x, top: r.y, width: (W - r.x) / cos + 40, height: lineH, angle: TILT, fill: '#ffffff', name: '右の線' }));
+  o.push(T(title, { left: cx, top: cy, width: tw + 40, angle: TILT, fontFamily: 'Anton', fontWeight: 400, fontSize: fs, lineHeight: 1, charSpacing: 10, shadow: sh('rgba(0,0,0,0.4)', 18, 0, 6), name: title }));
   return o;
+}
+/* goal scorers: one column up to 4, then up to 3 columns; the font shrinks to fit (about 15 names) */
+function scorerTexts({ W, H, k }, names) {
+  if (!names.length) return [T(' ', { originX: 'left', originY: 'top', left: W * 0.6, top: H * 0.905, width: W * 0.32, textAlign: 'left', fontFamily: 'Oswald', fontWeight: 500, fontSize: 21 * k, name: '得点者' })];
+  const top = H * 0.905, height = H * 0.985 - top, lh = 1.3, base = 21 * k;
+  const ratio = Math.max(...names.map(n => new fabric.Text(n, { fontFamily: 'Oswald', fontWeight: 500, fontSize: 100 }).width / 100));
+  const layout = n => {
+    if (n <= 4) return { cols: 1, left: W * 0.6, width: W * 0.32 };
+    return { cols: Math.min(3, Math.ceil(n / 5)), left: W * 0.08, width: W * 0.84 };
+  };
+  const { cols, left, width } = layout(names.length);
+  const rows = Math.ceil(names.length / cols), colW = width / cols;
+  const size = Math.max(9, Math.min(base, height / (rows * lh), (colW - 12) / ratio));
+  return Array.from({ length: cols }, (_, c) => T(names.slice(c * rows, (c + 1) * rows).join('\n'), {
+    originX: 'left', originY: 'top', left: left + c * colW, top, width: colW - 8, textAlign: 'left',
+    fontFamily: 'Oswald', fontWeight: 500, fontSize: size, lineHeight: lh, name: cols > 1 ? `得点者 ${c + 1}` : '得点者',
+  }));
 }
 /* an empty slot: dashed ring + label; filled by uploading while it is selected (or in order) */
 function emblemSlot(x, y, r, id, label) {
@@ -1827,9 +1852,9 @@ function scoreboardObjs() {
   return [
     new fabric.Rect({ originX: 'center', originY: 'center', left: cx, top: cy, width: w, height: h, rx: 24, ry: 24, fill: 'rgba(5,7,15,0.82)', stroke: hexA(t.accent, 0.6), strokeWidth: 2, name: 'スコア板' }),
     new fabric.Rect({ originX: 'center', originY: 'center', left: cx, top: cy, width: 260, height: h, fill: t.accent, name: 'スコア背景' }),
-    T(`${i.scoreUs} - ${i.scoreThem}`, { left: cx, top: cy + 6, width: 260, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 150, fill: t.secondary, name: 'スコア' }),
-    T(t.name, { left: cx - 280, top: cy, width: 280, fontFamily: 'Oswald', fontWeight: 700, fontSize: 38, name: 'HOME' }),
-    T(i.opponent, { left: cx + 280, top: cy, width: 280, fontFamily: 'Oswald', fontWeight: 700, fontSize: 38, name: 'AWAY' }),
+    T(`${i.scoreThem} - ${i.scoreUs}`, { left: cx, top: cy + 6, width: 260, fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 150, fill: t.secondary, name: 'スコア' }),
+    T(i.opponent, { left: cx - 280, top: cy, width: 280, fontFamily: 'Oswald', fontWeight: 700, fontSize: 38, name: '相手チーム名' }),
+    T(t.name, { left: cx + 280, top: cy, width: 280, fontFamily: 'Oswald', fontWeight: 700, fontSize: 38, name: '自チーム名' }),
   ];
 }
 function nameplateObjs() {
