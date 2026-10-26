@@ -77,10 +77,15 @@
   .fold-host.folded .fold-ico { transform: rotate(-90deg); }
   .sec-title.foldable { cursor:pointer; user-select:none; }
   .sec-title.foldable:hover { color:#e5e9f0; }
+  .al-ico { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; }
+  .al-ico rect { fill: currentColor; fill-opacity:.35; }
+  #objBar.off button, #objBar.off input { opacity:.35; pointer-events:none; }
+  body.mode-preset .post-only, body.mode-post .preset-only, body.view-home .preset-only { display:none !important; }
+  .ltab { font-size: 9.5px; padding-left: 0; padding-right: 0; min-width: 0; }
   #centerBar.compact .tab-label { display:none; }
   #centerBar.compact #objTools .w-px, #centerBar.tiny #objTools [data-op="forward"], #centerBar.tiny #objTools [data-op="backward"] { display:none; }
   body.craft-max #viewEditor { grid-template-columns: minmax(0,1fr) !important; }
-  body.craft-max #viewEditor > aside, body.craft-max #props, body.craft-max #propHead { display: none !important; }
+  body.craft-max #viewEditor > aside, body.craft-max #objBar { display: none !important; }
 
   input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 4px; background: #2a3140; outline: none; }
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #c8ff2e; border: 2px solid #08090d; cursor: pointer; box-shadow: 0 0 0 3px rgba(200,255,46,.15); }
@@ -198,17 +203,12 @@
       <div class="font-display text-[22px] text-white">TEAM POST <span class="text-accent">STUDIO</span></div>
       <div class="text-[10px] text-slate-500 tracking-wider">PhotoCraft × VectorCraft × Instagram</div>
     </div>
-    <button class="btn only-editor !px-2.5" id="btnBack"><i class="fa-solid fa-arrow-left"></i>投稿リスト</button>
+    <button class="btn only-editor !px-2.5" id="btnBack"><i class="fa-solid fa-arrow-left"></i><span id="btnBackLabel">投稿リスト</span></button>
     <div class="only-editor flex items-center gap-2 min-w-0">
-      <input id="postTitle" class="bg-transparent border border-transparent hover:border-line focus:border-accent/70 rounded-md px-2 py-1 text-sm font-bold text-white w-[260px] focus:outline-none select-text" placeholder="投稿タイトル">
+      <span class="badge bg-violet-400/15 text-violet-300 preset-only">プリセット編集</span>
+      <input id="postTitle" class="bg-transparent border border-transparent hover:border-line focus:border-accent/70 rounded-md px-2 py-1 text-sm font-bold text-white w-[260px] focus:outline-none select-text" placeholder="タイトル">
       <span class="text-[10px] text-slate-500 whitespace-nowrap" id="saveState"><i class="fa-solid fa-check"></i> 保存済み</span>
     </div>
-  </div>
-
-  <div class="only-editor flex items-center gap-1 bg-ink border border-line rounded-xl p-1" id="ratioBtns">
-    <button class="ratio-btn" data-ratio="1:1"><span class="shape w-3.5 h-3.5"></span>1:1</button>
-    <button class="ratio-btn" data-ratio="4:5"><span class="shape w-3 h-3.5"></span>フィード 4:5</button>
-    <button class="ratio-btn" data-ratio="9:16"><span class="shape w-2.5 h-4"></span>ストーリーズ 9:16</button>
   </div>
 
   <div class="flex items-center gap-1.5 justify-end">
@@ -219,15 +219,37 @@
     <button class="icon-btn only-editor" id="btnRedo" title="やり直す (Ctrl+Shift+Z)"><i class="fa-solid fa-rotate-right"></i></button>
     <button class="icon-btn only-editor" id="btnSettings" title="連携設定"><i class="fa-solid fa-gear"></i></button>
     <div class="w-px h-6 bg-line mx-1 only-editor"></div>
-    <button class="btn only-editor" id="btnPreviewTop"><i class="fa-brands fa-instagram"></i>プレビュー</button>
-    <button class="btn only-editor" id="btnSaveTop"><i class="fa-solid fa-download"></i>画像保存</button>
-    <button class="btn btn-hot only-editor" id="btnPublishTop"><i class="fa-solid fa-paper-plane"></i>Instagramに投稿</button>
+    <button class="btn only-editor post-only" id="btnPreviewTop"><i class="fa-brands fa-instagram"></i>プレビュー</button>
+    <button class="btn only-editor post-only" id="btnSaveTop"><i class="fa-solid fa-download"></i>画像保存</button>
+    <button class="btn btn-hot only-editor post-only" id="btnPublishTop"><i class="fa-solid fa-paper-plane"></i>Instagramに投稿</button>
+    <button class="btn btn-accent only-editor preset-only" id="btnPresetUseTop"><i class="fa-solid fa-plus"></i>このデザインで投稿を作成</button>
   </div>
 </header>
 
 <!-- ============ HOME (POST LIST) ============ -->
 <section id="viewHome" class="only-home h-[calc(100vh-56px)] overflow-y-auto">
   <div class="max-w-[1180px] mx-auto px-6 py-8">
+    <div class="seg w-[360px] mb-6" id="homeTabs">
+      <button class="on !py-2" data-home="posts"><i class="fa-regular fa-images mr-1.5"></i>投稿リスト</button>
+      <button class="!py-2" data-home="presets"><i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i>デザインプリセット</button>
+    </div>
+
+    <div id="homePresets" class="hidden">
+      <div class="flex items-end justify-between gap-4 mb-6">
+        <div>
+          <div class="font-display text-5xl text-white leading-none">DESIGN <span class="text-accent">PRESETS</span></div>
+          <p class="text-xs text-slate-400 mt-2">オリジナルのデザインプリセットを作成・管理します。作ったプリセットは編集画面の「デザイン」タブや新規作成から選べます。</p>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn" id="btnTypesHome"><i class="fa-solid fa-tags"></i>投稿タイプ・テンプレート</button>
+          <button class="btn btn-accent" id="btnNewPreset"><i class="fa-solid fa-plus"></i>プリセットを作成</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-1.5 mb-4" id="presetTypeFilter"></div>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4" id="presetList"></div>
+    </div>
+
+    <div id="homePosts">
     <div class="flex items-end justify-between gap-4 mb-6">
       <div>
         <div class="font-display text-5xl text-white leading-none">POST <span class="text-accent">LIST</span></div>
@@ -244,9 +266,7 @@
       <select id="homeStatus" class="field !w-auto !py-2">
         <option value="">すべての状態</option><option value="draft">下書き</option><option value="posted">投稿済み</option>
       </select>
-      <select id="homeType" class="field !w-auto !py-2">
-        <option value="">すべてのタイプ</option><option value="match">試合用</option><option value="training">練習試合用</option><option value="announce">告知用</option><option value="sponsor">スポンサー紹介用</option>
-      </select>
+      <select id="homeType" class="field !w-auto !py-2"></select>
       <select id="homeSort" class="field !w-auto !py-2">
         <option value="date-desc">投稿日が新しい順</option><option value="date-asc">投稿日が古い順</option><option value="upd-desc">更新が新しい順</option>
       </select>
@@ -259,6 +279,7 @@
       </div>
       <div id="postList"></div>
     </div>
+    </div>
   </div>
 </section>
 
@@ -269,11 +290,13 @@
   <aside class="relative bg-panel border-r border-line flex flex-col min-h-0" id="leftAside">
     <div class="vsplit right" id="splitLeft" title="ドラッグで幅を変更（ダブルクリックで畳む）"></div>
     <nav class="flex border-b border-line" id="leftTabs">
-      <button class="ltab active" data-tab="tpl"><i class="fa-solid fa-wand-magic-sparkles"></i>テンプレ</button>
-      <button class="ltab" data-tab="asset"><i class="fa-solid fa-shapes"></i>素材</button>
-      <button class="ltab" data-tab="text"><i class="fa-solid fa-font"></i>テキスト</button>
-      <button class="ltab" data-tab="bg"><i class="fa-solid fa-fill-drip"></i>背景</button>
-      <button class="ltab" data-tab="layer"><i class="fa-solid fa-layer-group"></i>レイヤー</button>
+      <button class="ltab active" data-tab="tpl" title="デザインプリセット・チーム設定"><i class="fa-solid fa-wand-magic-sparkles"></i>デザイン</button>
+      <button class="ltab" data-tab="info" title="投稿情報（デザインに差し込む文字）"><i class="fa-solid fa-clipboard-list"></i>投稿情報</button>
+      <button class="ltab" data-tab="asset" title="画像・図形・バッジ"><i class="fa-solid fa-shapes"></i>素材</button>
+      <button class="ltab" data-tab="text" title="テキストを追加"><i class="fa-solid fa-font"></i>テキスト</button>
+      <button class="ltab" data-tab="bg" title="背景"><i class="fa-solid fa-fill-drip"></i>背景</button>
+      <button class="ltab" data-tab="layer" title="レイヤー"><i class="fa-solid fa-layer-group"></i>レイヤー</button>
+      <button class="ltab" data-tab="props" title="選択中のオブジェクトを編集（操作パネル）"><i class="fa-solid fa-sliders"></i>編集</button>
     </nav>
     <div class="flex-1 overflow-y-auto p-4 space-y-5">
 
@@ -296,10 +319,32 @@
           </div>
         </div>
         <div>
-          <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-trophy"></i>デザインプリセット</span><span class="text-[9px] tracking-normal normal-case text-slate-500">表示中のスライドに適用</span></div>
+          <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-trophy"></i>デザインプリセット</span><span class="text-[9px] tracking-normal normal-case text-slate-500">押すと確認後に適用</span></div>
+          <div class="flex flex-wrap gap-1 mb-2.5" id="presetChips"></div>
           <div class="grid grid-cols-2 gap-2.5" id="presetGrid"></div>
-          <label class="ctl-row mt-3 text-[11px]"><input type="checkbox" id="linkCaption" checked>投稿タイプ・キャプションも連動</label>
+          <div class="grid grid-cols-2 gap-1.5 mt-2.5 post-only">
+            <button class="btn !text-[11px] !px-2" id="btnSaveAsPreset" title="表示中のスライドをオリジナルのプリセットとして保存"><i class="fa-solid fa-floppy-disk"></i>スライドを保存</button>
+            <button class="btn !text-[11px] !px-2" id="btnCreatePreset" title="プリセット作成ページを開く"><i class="fa-solid fa-plus"></i>プリセット作成</button>
+          </div>
+          <label class="ctl-row mt-3 text-[11px] post-only"><input type="checkbox" id="linkCaption" checked>投稿タイプ・キャプションも連動</label>
           <p class="text-[10px] text-slate-500 mt-2 leading-relaxed"><i class="fa-solid fa-circle-info mr-1"></i>アップロード済みの写真は保持され、デザインだけが切り替わります。</p>
+        </div>
+      </section>
+
+      <section data-pane="info" class="space-y-4 hidden">
+        <div>
+          <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-clipboard-list"></i>投稿情報</span><span class="text-[9px] tracking-normal normal-case text-slate-500 post-only">この投稿だけの値</span></div>
+          <div class="grid grid-cols-2 gap-2" id="infoFields"></div>
+          <div class="flex gap-1.5 mt-2.5">
+            <input class="field select-text" id="newFieldLabel" placeholder="項目名（例：MVP選手）">
+            <button class="btn !px-2.5 flex-shrink-0" id="btnAddField"><i class="fa-solid fa-plus"></i>項目を追加</button>
+          </div>
+          <button class="btn btn-accent w-full mt-2.5 post-only" id="btnReapply"><i class="fa-solid fa-arrows-rotate"></i>表示中のスライドに反映</button>
+        </div>
+        <div class="card text-[11px] text-slate-400 leading-relaxed space-y-1.5">
+          <p><i class="fa-solid fa-circle-info text-accent mr-1"></i>テキストの中に <code class="text-accent">{対戦相手}</code> のように<b class="text-slate-200">項目名を { } で囲んで</b>書くと、その部分に投稿情報が入ります。</p>
+          <p>テキストを選択中に下のボタンを押すと、差し込み項目を挿入できます。</p>
+          <div class="flex flex-wrap gap-1 pt-1" id="placeholderChips"></div>
         </div>
       </section>
 
@@ -390,6 +435,11 @@
         <div id="layerList" class="space-y-0.5"></div>
         <p class="text-[10px] text-slate-500 mt-3 leading-relaxed"><i class="fa-solid fa-circle-info mr-1"></i>重なって選択しにくいオブジェクトはここから選択。Alt+クリックで背面の選択中オブジェクトを掴んだまま操作できます。</p>
       </section>
+
+      <section data-pane="props" class="hidden">
+        <div class="sec-title"><i class="fa-solid fa-sliders"></i>操作パネル<span class="text-slate-500 font-normal tracking-normal normal-case" id="propTitle">— 背景</span></div>
+        <div id="props" class="flex flex-col gap-2.5"></div>
+      </section>
     </div>
   </aside>
 
@@ -426,6 +476,29 @@
       <button class="icon-btn flex-shrink-0 -ml-1" id="tglRight" title="右パネルを畳む／開く"><i class="fa-solid fa-angles-right"></i></button>
     </div>
 
+    <!-- 変形・整列バー（選択中のオブジェクト） -->
+    <div class="h-10 flex items-center gap-1 px-3 border-b border-line bg-panel/40 overflow-x-auto overflow-y-hidden" id="objBar">
+      <span class="text-[10px] text-slate-500 mr-1 whitespace-nowrap flex-shrink-0" id="objBarLabel">整列</span>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:left" title="左揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M3 2v16"/><rect x="5" y="5" width="11" height="3.5" rx="1"/><rect x="5" y="11.5" width="7" height="3.5" rx="1"/></svg></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:cx" title="左右中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M10 2v16"/><rect x="4" y="5" width="12" height="3.5" rx="1"/><rect x="6" y="11.5" width="8" height="3.5" rx="1"/></svg></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:right" title="右揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M17 2v16"/><rect x="4" y="5" width="11" height="3.5" rx="1"/><rect x="8" y="11.5" width="7" height="3.5" rx="1"/></svg></button>
+      <span class="w-px h-5 bg-line mx-0.5 flex-shrink-0"></span>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:top" title="上揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 3h16"/><rect x="5" y="5" width="3.5" height="11" rx="1"/><rect x="11.5" y="5" width="3.5" height="7" rx="1"/></svg></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:cy" title="上下中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 10h16"/><rect x="5" y="4" width="3.5" height="12" rx="1"/><rect x="11.5" y="6" width="3.5" height="8" rx="1"/></svg></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:bottom" title="下揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 17h16"/><rect x="5" y="4" width="3.5" height="11" rx="1"/><rect x="11.5" y="8" width="3.5" height="7" rx="1"/></svg></button>
+      <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
+      <button class="icon-btn !w-7 !h-7" data-ob="flipX" title="左右反転"><i class="fa-solid fa-left-right"></i></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="flipY" title="上下反転"><i class="fa-solid fa-up-down"></i></button>
+      <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
+      <label class="flex items-center gap-1 text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0" title="回転"><i class="fa-solid fa-rotate-right"></i>
+        <input type="number" class="field !w-14 !py-0.5 !px-1.5 text-center" id="obAngle" min="-180" max="180" step="1" value="0">°</label>
+      <button class="icon-btn !w-7 !h-7" data-ob="resetRot" title="回転をリセット"><i class="fa-solid fa-rotate-left"></i></button>
+      <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
+      <label class="flex items-center gap-1.5 text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0" title="不透明度">不透明度
+        <input type="range" class="!w-24" id="obOpacity" min="0" max="100" step="1" value="100"><b class="text-slate-200 w-8 tabular-nums" id="obOpacityOut">100%</b></label>
+      <span class="text-[10px] text-slate-600 ml-auto whitespace-nowrap pl-3 flex-shrink-0" id="obHint">1つ選択：キャンバス基準 ／ 複数選択：選択範囲基準</span>
+    </div>
+
     <div id="stage" class="relative flex-1 min-h-0 overflow-hidden">
       <div id="quickStage" class="absolute inset-0 flex items-center justify-center">
         <div id="canvasWrap" class="relative"><canvas id="editor"></canvas></div>
@@ -445,10 +518,9 @@
       </div>
     </div>
 
-    <!-- operation panel: slides + properties -->
-    <div class="relative border-t border-line bg-panel flex flex-col" id="propPanel">
-      <div class="hsplit" id="splitBottom" title="ドラッグで高さを変更（ダブルクリックで操作パネルを開閉）"></div>
-      <div class="px-4 pt-2 pb-2 border-b border-line/60">
+    <!-- slides in posting order -->
+    <div class="relative border-t border-line bg-panel flex flex-col post-only" id="propPanel">
+      <div class="px-4 pt-2 pb-2">
         <div class="flex items-center justify-between cursor-pointer select-none" id="stripHead" title="クリックで開閉">
           <div class="text-[11px] font-bold tracking-[0.15em] text-slate-300 flex items-center gap-2">
             <i class="fa-solid fa-chevron-down text-slate-500 transition-transform" id="stripChevron"></i>
@@ -459,14 +531,6 @@
         </div>
         <div class="flex items-center gap-2 overflow-x-auto pb-1 mt-2" id="slideStrip"></div>
       </div>
-      <div class="h-9 flex items-center justify-between px-4 border-b border-line/60 cursor-pointer select-none" id="propHead" title="クリックで開閉">
-        <div class="text-[11px] font-bold tracking-[0.15em] text-slate-300 flex items-center gap-2">
-          <i class="fa-solid fa-chevron-down text-slate-500 transition-transform" id="propChevron"></i>
-          <i class="fa-solid fa-sliders text-accent"></i>操作パネル<span class="text-slate-500 font-normal tracking-normal" id="propTitle">— 背景</span>
-        </div>
-        <span class="text-[10px] text-slate-500"><i class="fa-solid fa-grip-lines mr-1"></i>上端ドラッグで高さ調整</span>
-      </div>
-      <div id="props" class="overflow-y-auto p-3 grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5 content-start" style="height:190px"></div>
     </div>
   </section>
 
@@ -475,53 +539,57 @@
     <div class="vsplit left" id="splitRight" title="ドラッグで幅を変更（ダブルクリックで畳む）"></div>
     <div class="flex-1 overflow-y-auto p-4 space-y-5">
       <div>
+        <div class="sec-title"><i class="fa-solid fa-crop-simple"></i>サイズ</div>
+        <div class="grid grid-cols-3 gap-1 bg-ink border border-line rounded-xl p-1" id="ratioBtns">
+          <button class="ratio-btn justify-center !px-1" data-ratio="1:1"><span class="shape w-3.5 h-3.5"></span>1:1</button>
+          <button class="ratio-btn justify-center !px-1" data-ratio="4:5"><span class="shape w-3 h-3.5"></span>4:5</button>
+          <button class="ratio-btn justify-center !px-1" data-ratio="9:16"><span class="shape w-2.5 h-4"></span>9:16</button>
+        </div>
+        <p class="text-[10px] text-slate-500 mt-1.5" id="ratioNote">正方形 / フィード / ストーリーズ</p>
+      </div>
+
+      <div class="post-only">
         <div class="sec-title"><i class="fa-solid fa-tag"></i>投稿設定</div>
         <div class="grid grid-cols-2 gap-2">
           <div><label class="lbl">投稿日</label><input type="date" class="field" id="postDate"></div>
-          <div><label class="lbl">投稿タイプ</label>
-            <select class="field" id="postType">
-              <option value="match">⚔️ 試合用</option><option value="training">🏃 練習試合用</option>
-              <option value="announce">📣 告知用</option><option value="sponsor">🤝 スポンサー紹介用</option>
-            </select></div>
+          <div><label class="lbl">投稿タイプ</label><select class="field" id="postType"></select></div>
         </div>
-        <div class="grid grid-cols-[1fr_auto] gap-2 mt-2">
+        <div class="grid grid-cols-[1fr_auto_auto] gap-1.5 mt-2">
           <select class="field" id="capVariant"></select>
           <button class="btn !px-2.5" id="btnInsertTpl" title="テンプレートを挿入"><i class="fa-solid fa-file-import"></i>挿入</button>
+          <button class="btn !px-2.5" id="btnEditTypes" title="投稿タイプとキャプションテンプレートを編集"><i class="fa-solid fa-pen-to-square"></i></button>
         </div>
         <label class="ctl-row mt-2 text-[11px]"><input type="checkbox" id="autoTags" checked>テンプレ挿入時にハッシュタグも自動追加</label>
       </div>
 
-      <details class="card group" id="infoBox">
-        <summary class="flex items-center justify-between cursor-pointer list-none">
-          <span class="sec-title !mb-0"><i class="fa-solid fa-clipboard-list"></i>投稿情報（デザイン・本文に反映）</span>
-          <i class="fa-solid fa-chevron-down text-xs text-slate-500 group-open:rotate-180 transition"></i>
-        </summary>
-        <div class="grid grid-cols-2 gap-2 mt-3">
-          <div class="col-span-2"><label class="lbl">大会名・イベント名</label><input class="field select-text" data-info="competition"></div>
-          <div class="col-span-2"><label class="lbl">対戦相手</label><input class="field select-text" data-info="opponent"></div>
-          <div><label class="lbl">日付（表示用）</label><input class="field select-text" data-info="date"></div>
-          <div><label class="lbl">時間</label><input class="field select-text" data-info="time"></div>
-          <div class="col-span-2"><label class="lbl">会場</label><input class="field select-text" data-info="venue"></div>
-          <div><label class="lbl">スコア（自チーム）</label><input class="field select-text" data-info="scoreUs"></div>
-          <div><label class="lbl">スコア（相手）</label><input class="field select-text" data-info="scoreThem"></div>
-          <div class="col-span-2"><label class="lbl">スポンサー名</label><input class="field select-text" data-info="sponsor"></div>
-          <button class="btn col-span-2" id="btnReapply"><i class="fa-solid fa-arrows-rotate"></i>情報を反映してプリセット再適用</button>
+      <div class="preset-only">
+        <div class="sec-title"><i class="fa-solid fa-wand-magic-sparkles"></i>プリセット設定</div>
+        <div class="card space-y-2.5">
+          <div><label class="lbl">分類（投稿タイプ）</label><select class="field" id="presetType"></select></div>
+          <div><label class="lbl">説明（任意）</label><input class="field select-text" id="presetSub" placeholder="例：ホーム戦の試合告知"></div>
+          <p class="text-[10px] text-slate-500 leading-relaxed">左の「投稿情報」タブの差し込み項目（<code class="text-accent">{対戦相手}</code> など）をテキストに入れておくと、投稿で使うときにその投稿の情報が自動で入ります。</p>
+          <button class="btn w-full" id="btnPresetInsertTpl"><i class="fa-solid fa-code"></i>差し込み項目を確認する</button>
         </div>
-      </details>
+        <div class="grid grid-cols-2 gap-2 mt-3">
+          <button class="btn" id="btnPresetDup"><i class="fa-regular fa-copy"></i>コピーを作成</button>
+          <button class="btn hover:!border-hot hover:!text-hot" id="btnPresetDelete"><i class="fa-regular fa-trash-can"></i>削除</button>
+        </div>
+        <button class="btn btn-accent w-full mt-2 !py-2.5" id="btnPresetUse"><i class="fa-solid fa-plus"></i>このデザインで投稿を作成</button>
+      </div>
 
-      <div>
+      <div class="post-only">
         <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-pen-nib"></i>キャプション</span>
           <span class="tracking-normal normal-case font-normal text-[10px]"><span id="capCount">0</span>/2200 ・ #<span id="tagCount">0</span>/30</span></div>
         <textarea id="caption" rows="11" class="field !text-[12px] leading-relaxed resize-y select-text" placeholder="キャプションを入力..."></textarea>
         <div class="flex flex-wrap gap-1 mt-1.5" id="emojiBar"></div>
       </div>
 
-      <div>
+      <div class="post-only">
         <div class="sec-title"><i class="fa-solid fa-hashtag"></i>ハッシュタグ簡単追加</div>
         <div class="space-y-2.5" id="tagGroups"></div>
       </div>
 
-      <div>
+      <div class="post-only">
         <div class="sec-title"><i class="fa-solid fa-at"></i>アカウント・選手タグ付け</div>
         <div class="card space-y-2">
           <div class="grid grid-cols-[1fr_1fr_auto] gap-1.5">
@@ -537,7 +605,7 @@
         </div>
       </div>
 
-      <div>
+      <div class="post-only">
         <div class="sec-title"><i class="fa-solid fa-paper-plane"></i>書き出し・投稿</div>
         <div class="card space-y-2">
           <div class="grid grid-cols-[auto_1fr] gap-2 items-center">
@@ -570,22 +638,72 @@
     <div class="grid grid-cols-2 gap-3">
       <div><label class="lbl">投稿日</label><input type="date" class="field !py-2" id="nDate"></div>
       <div><label class="lbl">投稿タイプ</label>
-        <select class="field !py-2" id="nType">
-          <option value="match">⚔️ 試合用</option><option value="training">🏃 練習試合用</option>
-          <option value="announce">📣 告知用</option><option value="sponsor">🤝 スポンサー紹介用</option>
-        </select></div>
+        <select class="field !py-2" id="nType"></select></div>
       <div class="col-span-2"><label class="lbl">タイトル</label><input class="field !py-2 select-text" id="nTitle" placeholder="例：MATCH DAY vs RED HAWKS"></div>
       <div><label class="lbl">サイズ</label>
         <select class="field !py-2" id="nRatio"><option value="4:5">フィード 4:5（推奨）</option><option value="1:1">正方形 1:1</option><option value="9:16">ストーリーズ 9:16</option></select></div>
       <div><label class="lbl">1枚目のデザイン</label>
-        <select class="field !py-2" id="nPreset">
-          <option value="match">MATCH DAY</option><option value="result">MATCH RESULT</option><option value="announce">ANNOUNCEMENT</option>
-          <option value="recruit">RECRUIT</option><option value="sponsor">SPONSOR</option><option value="">白紙（背景のみ）</option>
-        </select></div>
+        <select class="field !py-2" id="nPreset"></select></div>
     </div>
     <div class="flex justify-end gap-2 pt-2">
       <button class="btn" data-close>キャンセル</button>
       <button class="btn btn-accent !px-5" id="nCreate"><i class="fa-solid fa-pen-ruler"></i>作成して編集へ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PRESET (NEW / SAVE) MODAL ============ -->
+<div class="modal" id="presetModal">
+  <div class="w-[520px] bg-panel border border-line rounded-2xl p-6 space-y-4">
+    <div class="flex items-center justify-between">
+      <div class="font-display text-3xl text-white" id="pmTitle">NEW <span class="text-accent">PRESET</span></div>
+      <button class="icon-btn" data-close><i class="fa-solid fa-xmark text-lg"></i></button>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="col-span-2"><label class="lbl">プリセット名</label><input class="field !py-2 select-text" id="pmName" placeholder="例：ホーム戦 MATCH DAY"></div>
+      <div><label class="lbl">分類（投稿タイプ）</label><select class="field !py-2" id="pmType"></select></div>
+      <div id="pmRatioBox"><label class="lbl">サイズ</label>
+        <select class="field !py-2" id="pmRatio"><option value="4:5">フィード 4:5</option><option value="1:1">正方形 1:1</option><option value="9:16">ストーリーズ 9:16</option></select></div>
+      <div class="col-span-2" id="pmBaseBox"><label class="lbl">元にするデザイン</label><select class="field !py-2" id="pmBase"></select></div>
+      <div class="col-span-2"><label class="lbl">説明（任意）</label><input class="field !py-2 select-text" id="pmSub" placeholder="例：アウェイ戦用・写真を大きく"></div>
+      <label class="ctl-row col-span-2 hidden" id="pmReplaceBox"><input type="checkbox" id="pmReplace" checked>投稿情報と同じ文字（対戦相手名・会場など）を差し込み項目 <code class="text-accent">{ }</code> に置き換える</label>
+    </div>
+    <div class="flex justify-end gap-2 pt-2">
+      <button class="btn" data-close>キャンセル</button>
+      <button class="btn btn-accent !px-5" id="pmCreate"><i class="fa-solid fa-pen-ruler"></i><span id="pmCreateLabel">作成して編集へ</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ POST TYPES / CAPTION TEMPLATES MODAL ============ -->
+<div class="modal" id="typesModal">
+  <div class="w-[960px] max-h-full overflow-hidden bg-panel border border-line rounded-2xl p-6 flex flex-col gap-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="font-display text-3xl text-white">POST TYPES <span class="text-accent">&amp; TEMPLATES</span></div>
+        <p class="text-[11px] text-slate-400 mt-1">投稿タイプ（分類）と、タイプごとのキャプション文章を自由に編集できます。変更は自動で保存されます。</p>
+      </div>
+      <button class="icon-btn" data-close><i class="fa-solid fa-xmark text-lg"></i></button>
+    </div>
+    <div class="grid grid-cols-[220px_200px_minmax(0,1fr)] gap-4 min-h-0 flex-1" style="height:min(560px,70vh)">
+      <div class="flex flex-col min-h-0">
+        <div class="lbl">投稿タイプ</div>
+        <div class="flex-1 overflow-y-auto space-y-1" id="tmTypes"></div>
+        <div class="flex gap-1.5 mt-2">
+          <input class="field select-text" id="tmNewType" placeholder="新しいタイプ名">
+          <button class="btn !px-2.5 flex-shrink-0" id="tmAddType"><i class="fa-solid fa-plus"></i></button>
+        </div>
+      </div>
+      <div class="flex flex-col min-h-0">
+        <div class="lbl">テンプレート</div>
+        <div class="flex-1 overflow-y-auto space-y-1" id="tmTpls"></div>
+        <button class="btn mt-2" id="tmAddTpl"><i class="fa-solid fa-plus"></i>テンプレートを追加</button>
+      </div>
+      <div class="flex flex-col min-h-0 gap-2" id="tmEditor"></div>
+    </div>
+    <div class="flex justify-between">
+      <button class="btn !text-[11px]" id="tmReset"><i class="fa-solid fa-rotate-left"></i>初期状態に戻す</button>
+      <button class="btn btn-accent !px-6" data-close>閉じる</button>
     </div>
   </div>
 </div>
@@ -821,36 +939,55 @@ function closeModal(id) { $('#' + id).classList.remove('open'); }
 $$('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m || e.target.closest('[data-close]')) m.classList.remove('open'); }));
 
 /* ---------------- storage (IndexedDB) ---------------- */
+/* two stores: posts, and the user's own design presets (same shape: title, ratio, slides[]) */
+function makeStore(name) {
+  const mem = new Map();
+  const req = (mode, fn) => new Promise((res, rej) => {
+    const q = fn(DB.db.transaction(name, mode).objectStore(name));
+    q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
+  });
+  return {
+    all() { return DB.db ? req('readonly', s => s.getAll()) : Promise.resolve([...mem.values()]); },
+    get(id) { return DB.db ? req('readonly', s => s.get(id)) : Promise.resolve(mem.get(id)); },
+    put(p) { if (!DB.db) { mem.set(p.id, p); return Promise.resolve(); } return req('readwrite', s => s.put(p)); },
+    del(id) { if (!DB.db) { mem.delete(id); return Promise.resolve(); } return req('readwrite', s => s.delete(id)); },
+  };
+}
 const DB = {
-  db: null, mem: new Map(),
+  db: null,
   open() {
     return new Promise(res => {
       try {
-        const r = indexedDB.open('teampost-studio', 1);
-        r.onupgradeneeded = () => r.result.createObjectStore('posts', { keyPath: 'id' });
+        const r = indexedDB.open('teampost-studio', 2);
+        r.onupgradeneeded = () => {
+          for (const n of ['posts', 'presets']) if (!r.result.objectStoreNames.contains(n)) r.result.createObjectStore(n, { keyPath: 'id' });
+        };
         r.onsuccess = () => { this.db = r.result; res(); };
         r.onerror = () => res();
       } catch (e) { res(); }
     });
   },
-  _req(mode, fn) {
-    if (!this.db) return Promise.resolve(fn(null));
-    return new Promise((res, rej) => { const q = fn(this.db.transaction('posts', mode).objectStore('posts')); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
-  },
-  all() { return this.db ? this._req('readonly', s => s.getAll()) : Promise.resolve([...this.mem.values()]); },
-  get(id) { return this.db ? this._req('readonly', s => s.get(id)) : Promise.resolve(this.mem.get(id)); },
-  put(p) { if (!this.db) { this.mem.set(p.id, p); return Promise.resolve(); } return this._req('readwrite', s => s.put(p)); },
-  del(id) { if (!this.db) { this.mem.delete(id); return Promise.resolve(); } return this._req('readwrite', s => s.delete(id)); },
 };
+DB.posts = makeStore('posts');
+DB.presets = makeStore('presets');
+/* the store an open document (post or preset) lives in */
+const docStore = () => (CUR.kind === 'preset' ? DB.presets : DB.posts);
 
 /* ---------------- state ---------------- */
 const RATIOS = { '1:1': [1080, 1080], '4:5': [1080, 1350], '9:16': [1080, 1920] };
 const MAX_SLIDES = 10;
 const PROPS = ['name', 'role', 'fx', 'fullBleed', 'filled', 'locked', 'selectable', 'evented', 'hasControls',
-  'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'perPixelTargetFind', 'splitByGrapheme'];
-const POST_TYPES = { match: '試合用', training: '練習試合用', announce: '告知用', sponsor: 'スポンサー紹介用' };
-const TYPE_BADGE = { match: 'bg-accent/15 text-accent', training: 'bg-sky/15 text-sky', announce: 'bg-amber-400/15 text-amber-300', sponsor: 'bg-violet-400/15 text-violet-300' };
+  'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'perPixelTargetFind', 'splitByGrapheme',
+  'tpl', 'fromPreset'];
+const BADGE_COLORS = ['bg-accent/15 text-accent', 'bg-sky/15 text-sky', 'bg-amber-400/15 text-amber-300', 'bg-violet-400/15 text-violet-300', 'bg-hot/15 text-hot', 'bg-emerald-400/15 text-emerald-300', 'bg-orange-400/15 text-orange-300', 'bg-pink-400/15 text-pink-300'];
 const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇' };
+/* post-info fields; the user can add their own (key c_…). Labels double as {placeholder} names. */
+const INFO_FIELDS_DEFAULT = [
+  { key: 'competition', label: '大会名', wide: true }, { key: 'opponent', label: '対戦相手', wide: true },
+  { key: 'date', label: '日付' }, { key: 'time', label: '時間' }, { key: 'venue', label: '会場', wide: true },
+  { key: 'scoreUs', label: '自チームスコア' }, { key: 'scoreThem', label: '相手スコア' }, { key: 'sponsor', label: 'スポンサー名', wide: true },
+];
+let infoFields = store.get('infoFields', INFO_FIELDS_DEFAULT);
 
 const S = {
   ratio: '4:5', W: 1080, H: 1350, zoom: 1, tab: 'quick',
@@ -860,7 +997,7 @@ const S = {
   images: [], postType: 'match',
   lastPreset: null, dirty: false, lastTemplate: '', exporting: false,
 };
-const CUR = { post: null, idx: 0 };
+const CUR = { post: null, idx: 0, kind: 'post' };
 
 /* ---------------- fabric setup ---------------- */
 fabric.Object.prototype.set({
@@ -1055,11 +1192,17 @@ canvas.on('object:modified', e => {
   if (t && t.type === 'image') t.fullBleed = false;
   markDirty(t); saveHistory(); refreshLayersSoon(); syncPropsLive();
 });
-canvas.on('text:changed', e => { markDirty(e.target); saveHistory(); refreshLayersSoon(); const ta = $('#props [data-k="text"]'); if (ta && document.activeElement !== ta) ta.value = e.target.text; });
+canvas.on('text:changed', e => { textEdited(e.target); markDirty(e.target); saveHistory(); refreshLayersSoon(); const ta = $('#props [data-k="text"]'); if (ta && document.activeElement !== ta) ta.value = e.target.text; });
+/* a hand-edited text keeps its {placeholders} only if it still has some (filled on 「反映」) */
+function textEdited(o) { if (o && CUR.kind === 'post') o.tpl = hasPlaceholder(o.text) ? o.text : null; }
 canvas.on('selection:created', onSel);
 canvas.on('selection:updated', onSel);
 canvas.on('selection:cleared', onSel);
-function onSel() { renderProps(); refreshLayersSoon(); }
+function onSel(e) {
+  renderProps(); refreshLayersSoon(); syncObjBar();
+  // picking something on the canvas opens its properties in the left panel
+  if (e && e.selected && e.selected.length && !HIST.lock && LAY.left && S.tab === 'quick') showLeftTab('props');
+}
 
 /* ---------------- snapping guides ---------------- */
 const GUIDE = { v: false, h: false };
@@ -1216,12 +1359,38 @@ function placeInSlot(img, slot) {
   canvas.getObjects().filter(o => o.role === 'placeholder').forEach(o => canvas.remove(o));
 }
 
-async function applyPreset(key, { caption = true, record = true } = {}) {
+/* the user's own presets (store "presets"), referenced on a slide as "c:<id>" */
+let CUSTOM = [];
+async function loadCustomPresets() { CUSTOM = (await DB.presets.all()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }
+const customById = id => CUSTOM.find(p => p.id === id);
+const presetName = key => key.startsWith('c:') ? (customById(key.slice(2))?.title || 'プリセット') : (PRESETS[key]?.title || key);
+const presetType = key => key.startsWith('c:') ? customById(key.slice(2))?.type : PRESETS[key]?.type;
+
+/* "{対戦相手}" / "{opponent}" → the post's info; unknown names stay as written */
+function fillInfo(text) {
+  const byName = { team: S.team.name, account: S.team.account, 'チーム名': S.team.name, 'アカウント': '@' + S.team.account };
+  infoFields.forEach(f => { byName[f.key] = S.info[f.key] ?? ''; byName[f.label] = S.info[f.key] ?? ''; });
+  return String(text).replace(/\{([^{}\n]+)\}/g, (m, k) => (k in byName ? byName[k] : m));
+}
+const hasPlaceholder = t => /\{[^{}\n]+\}/.test(t || '');
+/* texts that came from a preset with placeholders keep them in `tpl`; refill them from the info */
+function fillTplTexts() {
+  let n = 0;
+  canvas.getObjects().forEach(o => {
+    if (o.type === 'textbox' && o.tpl) { o.set('text', fillInfo(o.tpl)); o.initDimensions(); o.setCoords(); n++; }
+  });
+  canvas.requestRenderAll();
+  return n;
+}
+
+async function applyPreset(key, opts = {}) {
+  if (key.startsWith('c:')) return applyCustomPreset(key.slice(2), opts);
+  const { caption = true, record = true } = opts;
   const p = PRESETS[key]; if (!p) return;
   await fontsReady;
   HIST.lock = true;
   canvas.discardActiveObject();
-  const kept = canvas.getObjects().filter(o => o.type === 'image');
+  const kept = canvas.getObjects().filter(o => o.type === 'image' && !o.fromPreset);
   canvas.getObjects().slice().forEach(o => canvas.remove(o));
   S.bg = p.bg(S.team);
   ensureBg(); applyBg();
@@ -1236,22 +1405,70 @@ async function applyPreset(key, { caption = true, record = true } = {}) {
   canvas.requestRenderAll();
   if (record) saveHistory();
   refreshLayers(); renderProps(); highlightPreset();
-  if (caption && $('#linkCaption').checked) setPostType(p.type, p.variant, true);
+  if (caption && CUR.kind === 'post' && $('#linkCaption').checked) setPostType(p.type, p.variant, true);
+}
+async function applyCustomPreset(id, { caption = true, record = true } = {}) {
+  const p = customById(id);
+  if (!p || !p.slides?.[0]?.state) return;
+  await fontsReady;
+  const target = S.ratio;
+  const kept = canvas.getObjects().filter(o => o.type === 'image' && !o.fromPreset);
+  await loadSnapshot(p.slides[0].state);
+  canvas.getObjects().forEach(o => { if (o.role !== 'bg') o.fromPreset = true; });
+  S.lastPreset = null; S.dirty = true;
+  if (S.ratio !== target) await setRatio(target, { record: false });
+  HIST.lock = true;
+  kept.forEach((img, n) => { if (img.fullBleed) coverImage(img); canvas.insertAt(img, 1 + n); });
+  if (CUR.kind === 'post') fillTplTexts();
+  HIST.lock = false;
+  S.lastPreset = 'c:' + id; S.dirty = false;
+  canvas.requestRenderAll();
+  if (record) saveHistory();
+  refreshLayers(); renderProps(); highlightPreset();
+  if (caption && CUR.kind === 'post' && $('#linkCaption').checked && typeById(p.type)) setPostType(p.type, 0, true);
 }
 function highlightPreset() { $$('.preset-card').forEach(c => c.classList.toggle('active', c.dataset.preset === S.lastPreset)); }
+let presetFilter = '';
+function presetEntries() {
+  const built = Object.entries(PRESETS).map(([key, p]) => ({ key, title: p.title, sub: p.sub, type: p.type, builtIn: true }));
+  const custom = CUSTOM.filter(p => !(CUR.kind === 'preset' && CUR.post?.id === p.id))
+    .map(p => ({ key: 'c:' + p.id, title: p.title || '（無題）', sub: p.sub || typeLabel(p.type), type: p.type, thumb: p.slides?.[0]?.thumb, ratio: p.ratio }));
+  return [...custom, ...built];
+}
 function renderPresetCards() {
-  const t = S.team;
-  $('#presetGrid').innerHTML = Object.entries(PRESETS).map(([key, p]) => `
-    <button class="preset-card ${key === 'sponsor' ? 'col-span-2' : ''}" data-preset="${key}">
-      <div class="h-[84px] relative flex flex-col justify-end p-2.5" style="background:${p.thumb(t)}">
+  const t = S.team, all = presetEntries();
+  const used = [...new Set(all.map(e => e.type))].filter(typeById);
+  if (presetFilter && !used.includes(presetFilter)) presetFilter = '';
+  $('#presetChips').innerHTML = [['', 'すべて'], ...used.map(id => [id, typeLabel(id)])]
+    .map(([id, l]) => `<button class="chip ${presetFilter === id ? 'on' : ''}" data-pf="${id}">${esc(l)}</button>`).join('');
+  $('#presetGrid').innerHTML = all.filter(e => !presetFilter || e.type === presetFilter).map(e => e.builtIn ? `
+    <button class="preset-card" data-preset="${e.key}" title="${esc(e.title)}（標準）">
+      <div class="h-[84px] relative flex flex-col justify-end p-2.5" style="background:${PRESETS[e.key].thumb(t)}">
         <div class="absolute top-0 right-0 w-1/2 h-full opacity-40" style="background:linear-gradient(115deg, transparent 40%, ${t.accent} 41%, ${t.accent} 44%, transparent 45%)"></div>
-        <div class="font-display text-[22px] leading-none text-white relative">${p.title.replace(' ', ' <span style="color:' + t.accent + '">') + (p.title.includes(' ') ? '</span>' : '')}</div>
-        <div class="text-[10px] text-white/70 relative mt-1">${p.sub}</div>
+        <div class="font-display text-[20px] leading-none text-white relative">${e.title.replace(' ', ' <span style="color:' + t.accent + '">') + (e.title.includes(' ') ? '</span>' : '')}</div>
+        <div class="text-[10px] text-white/70 relative mt-1">${esc(e.sub)}</div>
       </div>
-    </button>`).join('');
+    </button>` : `
+    <button class="preset-card" data-preset="${e.key}" title="${esc(e.title)}（オリジナル・${e.ratio}）">
+      <div class="h-[84px] relative flex flex-col justify-end p-2.5 bg-ink">
+        ${e.thumb ? `<img src="${e.thumb}" class="absolute inset-0 w-full h-full object-cover opacity-80">` : ''}
+        <div class="absolute inset-0 bg-gradient-to-t from-black/85 to-transparent"></div>
+        <span class="absolute top-1.5 right-1.5 badge bg-violet-500/80 text-white !text-[9px]">MY</span>
+        <div class="text-[12px] font-bold leading-tight text-white relative truncate">${esc(e.title)}</div>
+        <div class="text-[10px] text-white/70 relative mt-0.5 truncate">${esc(e.sub)}</div>
+      </div>
+    </button>`).join('') || '<p class="col-span-2 text-[11px] text-slate-500">この分類のプリセットはありません</p>';
   highlightPreset();
 }
-$('#presetGrid').addEventListener('click', e => { const c = e.target.closest('.preset-card'); if (c) { applyPreset(c.dataset.preset); toast(`スライド${CUR.idx + 1}に「${PRESETS[c.dataset.preset].title}」を適用しました`, 'fa-wand-magic-sparkles'); } });
+$('#presetChips').addEventListener('click', e => { const c = e.target.closest('[data-pf]'); if (c) { presetFilter = c.dataset.pf; renderPresetCards(); } });
+$('#presetGrid').addEventListener('click', async e => {
+  const c = e.target.closest('.preset-card'); if (!c) return;
+  const key = c.dataset.preset, name = presetName(key);
+  const where = CUR.kind === 'preset' ? 'このプリセット' : `スライド${CUR.idx + 1}`;
+  if (!confirm(`${where}に「${name}」を反映しますか？\n\n文字や装飾はプリセットの内容に置き換わります（アップロードした写真は残ります）。`)) return;
+  await applyPreset(key);
+  toast(`${where}に「${name}」を反映しました`, 'fa-wand-magic-sparkles');
+});
 
 /* ==========================================================
    ADD OBJECTS
@@ -1557,12 +1774,72 @@ function renderProps() {
   else if (o.type === 'image') h = imagePropsHTML(o);
   else if (o.type === 'group') h = groupPropsHTML(o);
   else h = shapePropsHTML(o);
-  el.innerHTML = h + commonPropsHTML(o);
+  el.innerHTML = h;
 }
-function syncPropsLive() {
+function syncPropsLive() { syncObjBar(); }
+
+/* ---------------- transform / align bar (top of the canvas) ---------------- */
+function syncObjBar() {
+  const o = canvas.getActiveObject();
+  $('#objBar').classList.toggle('off', !o);
+  $('#objBarLabel').textContent = !o ? '整列（オブジェクトを選択）' : o.type === 'activeSelection' ? `整列（${o.size()}個）` : '整列';
+  if (!o) return;
+  const ang = Math.round(o.angle > 180 ? o.angle - 360 : o.angle);
+  if (document.activeElement !== $('#obAngle')) $('#obAngle').value = ang;
+  const op = Math.round((o.type === 'activeSelection' ? (o.getObjects()[0]?.opacity ?? 1) : (o.opacity ?? 1)) * 100);
+  $('#obOpacity').value = op; $('#obOpacityOut').textContent = op + '%';
+}
+/* one object: against the canvas; several: against the selection's bounds */
+function alignActive(v) {
   const o = canvas.getActiveObject(); if (!o) return;
-  const a = $('#props [data-k="angle"]'); if (a) { a.value = Math.round(o.angle); outLabel('angle', Math.round(o.angle)); }
+  const shift = (b, ref) => {
+    let dx = 0, dy = 0;
+    if (v === 'left') dx = ref.left - b.left;
+    if (v === 'cx') dx = ref.left + ref.width / 2 - (b.left + b.width / 2);
+    if (v === 'right') dx = ref.left + ref.width - (b.left + b.width);
+    if (v === 'top') dy = ref.top - b.top;
+    if (v === 'cy') dy = ref.top + ref.height / 2 - (b.top + b.height / 2);
+    if (v === 'bottom') dy = ref.top + ref.height - (b.top + b.height);
+    return [dx, dy];
+  };
+  if (o.type === 'activeSelection') {
+    const objs = o.getObjects();
+    canvas.discardActiveObject();
+    const rects = objs.map(x => { x.setCoords(); return x.getBoundingRect(true, true); });
+    const l = Math.min(...rects.map(b => b.left)), t = Math.min(...rects.map(b => b.top));
+    const ref = { left: l, top: t, width: Math.max(...rects.map(b => b.left + b.width)) - l, height: Math.max(...rects.map(b => b.top + b.height)) - t };
+    objs.forEach(x => { if (x.locked) return; x.setCoords(); const [dx, dy] = shift(x.getBoundingRect(true, true), ref); x.set({ left: x.left + dx, top: x.top + dy }); x.setCoords(); });
+    canvas.setActiveObject(new fabric.ActiveSelection(objs, { canvas }));
+  } else {
+    if (o.locked) return toast('ロック中のオブジェクトは動かせません', 'fa-lock', 'text-sky');
+    o.setCoords();
+    const [dx, dy] = shift(o.getBoundingRect(true, true), { left: 0, top: 0, width: S.W, height: S.H });
+    o.set({ left: o.left + dx, top: o.top + dy }); o.setCoords();
+    if (o.type === 'image') o.fullBleed = false;
+  }
+  canvas.requestRenderAll(); markDirty(o); saveHistory();
 }
+$('#objBar').addEventListener('click', e => {
+  const b = e.target.closest('[data-ob]'); if (!b) return;
+  const o = canvas.getActiveObject(); if (!o) return;
+  const [a, v] = b.dataset.ob.split(':');
+  if (a === 'al') return alignActive(v);
+  if (a === 'flipX') o.set('flipX', !o.flipX);
+  if (a === 'flipY') o.set('flipY', !o.flipY);
+  if (a === 'resetRot') o.rotate(0);
+  o.setCoords(); canvas.requestRenderAll(); markDirty(o); saveHistory(); syncObjBar();
+});
+$('#obAngle').addEventListener('input', e => {
+  const o = canvas.getActiveObject(); if (!o || e.target.value === '' || e.target.value === '-') return;
+  o.rotate(Math.max(-360, Math.min(360, +e.target.value))); o.setCoords(); canvas.requestRenderAll(); markDirty(o); saveHistory();
+});
+$('#obOpacity').addEventListener('input', e => {
+  const o = canvas.getActiveObject(); if (!o) return;
+  (o.type === 'activeSelection' ? o.getObjects() : [o]).forEach(x => x.set('opacity', +e.target.value / 100));
+  $('#obOpacityOut').textContent = e.target.value + '%';
+  canvas.requestRenderAll(); markDirty(o); saveHistory();
+});
+canvas.on('object:rotating', syncObjBar);
 function textPropsHTML(o) {
   const shd = o.shadow;
   const bgMode = o.backgroundColor ? 'box' : (o.textBackgroundColor ? 'line' : 'none');
@@ -1621,16 +1898,10 @@ function groupPropsHTML(o) {
     (main ? C.color('gMain', 'メインカラー', main.fill) : '') + (txt ? C.color('gText', '文字・線の色', txt.fill) : '') +
     C.btns([['ungroup', '<i class="fa-solid fa-object-ungroup mr-1"></i>グループ解除']]));
 }
-function commonPropsHTML(o) {
-  return C.sec('fa-up-down-left-right', '変形・共通',
-    C.range('opacity', '不透明度', 0, 100, 1, Math.round((o.opacity ?? 1) * 100), '%') +
-    C.range('angle', '回転', -180, 180, 1, Math.round(o.angle > 180 ? o.angle - 360 : o.angle), '°') +
-    C.btns([['centerH', '左右中央'], ['centerV', '上下中央'], ['flipX', '左右反転'], ['flipY', '上下反転'], ['resetRot', '回転リセット']]));
-}
-function multiPropsHTML() {
-  return C.sec('fa-object-group', '複数選択',
-      C.btns([['group', '<i class="fa-solid fa-object-group mr-1"></i>グループ化'], ['centerH', '左右中央'], ['centerV', '上下中央']]) + C.range('opacity', '不透明度', 0, 100, 1, 100, '%')) +
-    C.sec('fa-align-center', '整列（キャンバス基準）', C.btns([['al:left', '左'], ['al:cx', '中央'], ['al:right', '右'], ['al:top', '上'], ['al:cy', '中'], ['al:bottom', '下']]));
+function multiPropsHTML(o) {
+  return C.sec('fa-object-group', `複数選択（${o.size()}個）`,
+    C.btns([['group', '<i class="fa-solid fa-object-group mr-1"></i>グループ化']]) +
+    `<p class="text-[10px] text-slate-500 leading-relaxed">整列・反転・回転・不透明度は、キャンバス上部のバーから操作できます（複数選択時は選択範囲を基準に揃えます）。</p>`);
 }
 function bgPropsHTML() {
   const b = S.bg;
@@ -1652,7 +1923,7 @@ function setProp(k, v) {
   const each = fn => (o.type === 'activeSelection' ? o.getObjects() : [o]).forEach(fn);
   const ensureShadow = () => { if (!o.shadow) o.set('shadow', sh('rgba(0,0,0,0.6)', 20, 0, 6)); return o.shadow; };
   switch (k) {
-    case 'text': o.set('text', v); refreshLayersSoon(); break;
+    case 'text': o.set('text', v); textEdited(o); refreshLayersSoon(); break;
     case 'fontFamily': o.set('fontFamily', v); break;
     case 'fontWeight': o.set('fontWeight', +v); break;
     case 'fontSize': o.set('fontSize', +v); break;
@@ -1757,9 +2028,6 @@ function applyLayout(save = true) {
   document.body.classList.toggle('right-off', !LAY.right);
   $('#tglLeft i').className = 'fa-solid ' + (LAY.left ? 'fa-angles-left' : 'fa-angles-right');
   $('#tglRight i').className = 'fa-solid ' + (LAY.right ? 'fa-angles-right' : 'fa-angles-left');
-  $('#props').style.height = LAY.ph + 'px';
-  $('#props').classList.toggle('hidden', !LAY.props);
-  $('#propChevron').style.transform = LAY.props ? '' : 'rotate(-90deg)';
   $('#slideStrip').classList.toggle('hidden', !LAY.strip);
   $('#stripChevron').style.transform = LAY.strip ? '' : 'rotate(-90deg)';
   $$('.fold-host').forEach(h => h.classList.toggle('folded', !!LAY.folds[h.dataset.fold]));
@@ -1789,10 +2057,8 @@ function dragSplitter(el, onMove, onDbl) {
 }
 dragSplitter($('#splitLeft'), (dx, dy, s) => { LAY.left = true; LAY.lw = clampLay('lw', s.lw + dx); }, () => { LAY.left = !LAY.left; });
 dragSplitter($('#splitRight'), (dx, dy, s) => { LAY.right = true; LAY.rw = clampLay('rw', s.rw - dx); }, () => { LAY.right = !LAY.right; });
-dragSplitter($('#splitBottom'), (dx, dy, s) => { LAY.props = true; LAY.ph = clampLay('ph', s.ph - dy); }, () => { LAY.props = !LAY.props; });
 $('#tglLeft').addEventListener('click', () => { LAY.left = !LAY.left; applyLayout(); });
 $('#tglRight').addEventListener('click', () => { LAY.right = !LAY.right; applyLayout(); });
-$('#propHead').addEventListener('click', () => { LAY.props = !LAY.props; applyLayout(); });
 $('#stripHead').addEventListener('click', () => { LAY.strip = !LAY.strip; applyLayout(); });
 $('#btnLayoutReset').addEventListener('click', () => { LAY = { ...LAYOUT_DEF, folds: {} }; applyLayout(); toast('レイアウトを初期状態に戻しました', 'fa-table-columns'); });
 /* the center toolbar drops its tab labels when the middle column gets narrow */
@@ -1805,7 +2071,7 @@ new ResizeObserver(([e]) => {
 function initFolds() {
   $$('#viewEditor aside .sec-title').forEach(t => {
     const host = t.parentElement;
-    if (!host || host.tagName === 'SUMMARY' || host.closest('summary') || host.closest('aside') !== t.closest('aside') || host.matches('aside')) return;
+    if (!host || host.tagName === 'SUMMARY' || host.closest('summary') || host.closest('aside') !== t.closest('aside') || host.matches('aside') || host.matches('[data-pane="props"]')) return;
     const key = (t.closest('[data-pane]')?.dataset.pane || 'right') + ':' + t.textContent.trim().slice(0, 20);
     host.classList.add('fold-host'); host.dataset.fold = key;
     t.classList.add('foldable'); t.title = 'クリックで開閉';
@@ -1818,11 +2084,13 @@ function initFolds() {
 }
 
 /* ---------------- left panel bindings ---------------- */
-$$('#leftTabs .ltab').forEach(b => b.addEventListener('click', () => {
-  $$('#leftTabs .ltab').forEach(x => x.classList.toggle('active', x === b));
-  $$('[data-pane]').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== b.dataset.tab));
-  if (b.dataset.tab === 'layer') refreshLayers();
-}));
+function showLeftTab(name) {
+  $$('#leftTabs .ltab').forEach(x => x.classList.toggle('active', x.dataset.tab === name));
+  $$('[data-pane]').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== name));
+  if (name === 'layer') refreshLayers();
+  if (name === 'info') renderInfoFields();
+}
+$$('#leftTabs .ltab').forEach(b => b.addEventListener('click', () => showLeftTab(b.dataset.tab)));
 $$('[data-shape]').forEach(t => t.addEventListener('click', () => addShape(t.dataset.shape)));
 $$('[data-badge]').forEach(t => t.addEventListener('click', () => {
   const l = t.dataset.badge;
@@ -1894,22 +2162,22 @@ function bindTeam() {
    ========================================================== */
 const CAPTIONS = {
   match: [
-    { name: '試合告知', text: `🔥MATCH DAY🔥\n{competition}\n\n{team} vs {opponent}\n\n🗓 {date}\n⏰ {time} KICK OFF\n📍 {venue}\n\nチーム一丸となって勝利を掴みにいきます💪\n会場・オンラインでの応援よろしくお願いします！📣` },
-    { name: '試合結果', text: `【試合結果】\n{competition}\n\n{team} {scoreUs} - {scoreThem} {opponent}\n\n📍 {venue}\n\nたくさんの応援ありがとうございました！🙏\n次戦も全員で勝ちにいきます🔥` },
-    { name: 'スタメン発表', text: `📋STARTING MEMBER📋\n{competition}\nvs {opponent}\n\n今日のスタメンはこちら！\n\n⏰ {time} KICK OFF\n📍 {venue}\n\n全力で戦います！応援よろしくお願いします📣` },
+    { name: '試合告知', text: `🔥MATCH DAY🔥\n{大会名}\n\n{チーム名} vs {対戦相手}\n\n🗓 {日付}\n⏰ {時間} KICK OFF\n📍 {会場}\n\nチーム一丸となって勝利を掴みにいきます💪\n会場・オンラインでの応援よろしくお願いします！📣` },
+    { name: '試合結果', text: `【試合結果】\n{大会名}\n\n{チーム名} {自チームスコア} - {相手スコア} {対戦相手}\n\n📍 {会場}\n\nたくさんの応援ありがとうございました！🙏\n次戦も全員で勝ちにいきます🔥` },
+    { name: 'スタメン発表', text: `📋STARTING MEMBER📋\n{大会名}\nvs {対戦相手}\n\n今日のスタメンはこちら！\n\n⏰ {時間} KICK OFF\n📍 {会場}\n\n全力で戦います！応援よろしくお願いします📣` },
   ],
   training: [
-    { name: '練習試合 結果', text: `【練習試合 結果】⚔️\n{date} vs {opponent}\n\n{team} {scoreUs} - {scoreThem} {opponent}\n\n📍 {venue}\n\n{opponent}の皆さま、ありがとうございました！\n見えた課題をしっかり修正して、次の公式戦に繋げます💪` },
-    { name: '練習試合 告知', text: `【TRAINING MATCH】\n練習試合のお知らせです📣\n\n🆚 {opponent}\n🗓 {date} {time}〜\n📍 {venue}\n\n見学大歓迎です！ぜひお越しください👟` },
+    { name: '練習試合 結果', text: `【練習試合 結果】⚔️\n{日付} vs {対戦相手}\n\n{チーム名} {自チームスコア} - {相手スコア} {対戦相手}\n\n📍 {会場}\n\n{対戦相手}の皆さま、ありがとうございました！\n見えた課題をしっかり修正して、次の公式戦に繋げます💪` },
+    { name: '練習試合 告知', text: `【TRAINING MATCH】\n練習試合のお知らせです📣\n\n🆚 {対戦相手}\n🗓 {日付} {時間}〜\n📍 {会場}\n\n見学大歓迎です！ぜひお越しください👟` },
   ],
   announce: [
-    { name: 'お知らせ', text: `📣お知らせ📣\n\nいつも{team}を応援いただきありがとうございます。\n\n11月の練習スケジュールが変更になりました。\n詳細は下記をご確認ください。\n\n🗓 \n📍 {venue}\n\nご不明点はDMまでお気軽にどうぞ！` },
-    { name: 'メンバー募集', text: `🔥RECRUIT🔥\n{team}では一緒にプレーする仲間を募集しています！\n\n✅ 対象：小学生〜一般（経験不問）\n✅ 練習：毎週 土・日 9:00〜12:00\n✅ 場所：{venue}\n\n体験参加・見学は随時受付中！\nプロフィールのリンクまたはDMからお気軽にご連絡ください📩` },
-    { name: 'イベント告知', text: `🎉EVENT🎉\n{team} 主催イベント開催決定！\n\n🗓 {date} {time}〜\n📍 {venue}\n\n参加費・持ち物などの詳細は後日お知らせします。\nみなさまのご参加お待ちしています！` },
+    { name: 'お知らせ', text: `📣お知らせ📣\n\nいつも{チーム名}を応援いただきありがとうございます。\n\n11月の練習スケジュールが変更になりました。\n詳細は下記をご確認ください。\n\n🗓 \n📍 {会場}\n\nご不明点はDMまでお気軽にどうぞ！` },
+    { name: 'メンバー募集', text: `🔥RECRUIT🔥\n{チーム名}では一緒にプレーする仲間を募集しています！\n\n✅ 対象：小学生〜一般（経験不問）\n✅ 練習：毎週 土・日 9:00〜12:00\n✅ 場所：{会場}\n\n体験参加・見学は随時受付中！\nプロフィールのリンクまたはDMからお気軽にご連絡ください📩` },
+    { name: 'イベント告知', text: `🎉EVENT🎉\n{チーム名} 主催イベント開催決定！\n\n🗓 {日付} {時間}〜\n📍 {会場}\n\n参加費・持ち物などの詳細は後日お知らせします。\nみなさまのご参加お待ちしています！` },
   ],
   sponsor: [
-    { name: 'スポンサー紹介', text: `【OFFICIAL SPONSOR】🤝\nいつも{team}を応援いただきありがとうございます。\n\n今シーズンも「{sponsor}」様に\nスポンサーとしてご支援いただくことになりました✨\n\n🏢 {sponsor} 様\n📝 事業内容：\n🔗 @\n\nチーム一同、感謝の気持ちを胸に全力で戦います！` },
-    { name: 'スポンサー感謝', text: `THANK YOU FOR YOUR SUPPORT🙏\n\n{sponsor} 様\nいつも温かいご支援をありがとうございます。\n\nこれからも地域に愛されるチームを目指して、\n一戦一戦全力で戦っていきます🔥` },
+    { name: 'スポンサー紹介', text: `【OFFICIAL SPONSOR】🤝\nいつも{チーム名}を応援いただきありがとうございます。\n\n今シーズンも「{スポンサー名}」様に\nスポンサーとしてご支援いただくことになりました✨\n\n🏢 {スポンサー名} 様\n📝 事業内容：\n🔗 @\n\nチーム一同、感謝の気持ちを胸に全力で戦います！` },
+    { name: 'スポンサー感謝', text: `THANK YOU FOR YOUR SUPPORT🙏\n\n{スポンサー名} 様\nいつも温かいご支援をありがとうございます。\n\nこれからも地域に愛されるチームを目指して、\n一戦一戦全力で戦っていきます🔥` },
   ],
 };
 const TAG_GROUP_DEFAULT = [
@@ -1919,27 +2187,51 @@ const TAG_GROUP_DEFAULT = [
   { id: 'sponsor', label: 'スポンサー用', icon: 'fa-handshake', tags: '#スポンサー #sponsor #パートナー企業 #感謝 #thankyou #地域企業 #ご支援ありがとうございます' },
 ];
 let tagGroups = store.get('tagGroups', TAG_GROUP_DEFAULT);
-const TYPE_TAG = { match: 'match', training: 'match', announce: 'announce', sponsor: 'sponsor' };
 const teamTag = () => (S.team.name || 'TEAM').replace(/[\s・\-_.!！?？'"]/g, '');
 const groupTags = g => g.tags.replace(/\{TEAM\}/g, teamTag()).split(/\s+/).filter(Boolean).map(t => t.startsWith('#') ? t : '#' + t);
 
-const cap = $('#caption');
-function fillTpl(text) {
-  const d = { ...S.info, team: S.team.name, account: S.team.account };
-  return text.replace(/\{(\w+)\}/g, (m, k) => d[k] ?? m);
+/* post types (also the categories of design presets), each with its own caption templates */
+const TYPES_DEFAULT = () => JSON.parse(JSON.stringify([
+  { id: 'match', label: '試合用', emoji: '⚔️', tagGroup: 'match', templates: CAPTIONS.match },
+  { id: 'training', label: '練習試合用', emoji: '🏃', tagGroup: 'match', templates: CAPTIONS.training },
+  { id: 'announce', label: '告知用', emoji: '📣', tagGroup: 'announce', templates: CAPTIONS.announce },
+  { id: 'sponsor', label: 'スポンサー紹介用', emoji: '🤝', tagGroup: 'sponsor', templates: CAPTIONS.sponsor },
+]));
+let TYPES = store.get('types', null) || TYPES_DEFAULT();
+const saveTypes = () => store.set('types', TYPES);
+const typeById = id => TYPES.find(t => t.id === id);
+const typeLabel = id => typeById(id)?.label || '未分類';
+const typeBadge = id => typeById(id) ? BADGE_COLORS[TYPES.findIndex(t => t.id === id) % BADGE_COLORS.length] : 'bg-white/5 text-slate-400';
+const curType = () => typeById(S.postType) || TYPES[0];
+function renderTypeSelects() {
+  const opts = TYPES.map(t => `<option value="${t.id}">${esc((t.emoji ? t.emoji + ' ' : '') + t.label)}</option>`).join('');
+  for (const id of ['#postType', '#nType', '#presetType', '#pmType']) { const el = $(id), v = el.value; el.innerHTML = opts; if (typeById(v)) el.value = v; }
+  if (typeById(S.postType)) $('#postType').value = S.postType;
+  const h = $('#homeType'), hv = h.value;
+  h.innerHTML = '<option value="">すべてのタイプ</option>' + TYPES.map(t => `<option value="${t.id}">${esc(t.label)}</option>`).join('');
+  h.value = hv;
 }
-function renderVariants() { $('#capVariant').innerHTML = CAPTIONS[S.postType].map((c, i) => `<option value="${i}">テンプレ：${c.name}</option>`).join(''); }
+
+const cap = $('#caption');
+const fillTpl = fillInfo;
+function renderVariants() {
+  const tpls = curType()?.templates || [];
+  $('#capVariant').innerHTML = tpls.length ? tpls.map((c, i) => `<option value="${i}">テンプレ：${esc(c.name)}</option>`).join('') : '<option value="">（テンプレートなし）</option>';
+}
 function setPostType(type, variant = 0, fromPreset = false) {
+  if (!typeById(type)) return;
   S.postType = type; $('#postType').value = type;
-  if (CUR.post) { CUR.post.type = type; schedulePostSave(); }
+  if (CUR.post && CUR.kind === 'post') { CUR.post.type = type; schedulePostSave(); }
   renderVariants(); $('#capVariant').value = variant;
   insertTemplate(fromPreset);
 }
 function captionTemplate() {
-  let txt = fillTpl(CAPTIONS[S.postType][+$('#capVariant').value || 0].text);
+  const t = curType();
+  let txt = fillInfo(t?.templates?.[+$('#capVariant').value || 0]?.text || '');
   if ($('#autoTags').checked) {
-    const gs = ['common', TYPE_TAG[S.postType]].map(id => tagGroups.find(g => g.id === id)).filter(Boolean);
-    txt += '\n\n' + [...new Set(gs.flatMap(groupTags))].slice(0, 30).join(' ');
+    const gs = ['common', t?.tagGroup].map(id => tagGroups.find(g => g.id === id)).filter(Boolean);
+    const tags = [...new Set(gs.flatMap(groupTags))].slice(0, 30);
+    if (tags.length) txt += (txt ? '\n\n' : '') + tags.join(' ');
   }
   return txt;
 }
@@ -1956,14 +2248,112 @@ function onCaptionChange(from) {
   const n = (v.match(/#[^\s#]+/g) || []).length;
   $('#tagCount').textContent = n;
   $('#tagCount').parentElement.classList.toggle('text-hot', n > 30 || v.length > 2200);
-  if (CUR.post && CUR.post.caption !== v) { CUR.post.caption = v; CUR.post.lastTemplate = S.lastTemplate; schedulePostSave(); }
+  if (CUR.post && CUR.kind === 'post' && CUR.post.caption !== v) { CUR.post.caption = v; CUR.post.lastTemplate = S.lastTemplate; schedulePostSave(); }
   updateTagChipStates();
   if (PV.open) { if (from !== 'pv') $('#pvEdit').value = v; pvRenderCaption(); }
 }
 cap.addEventListener('input', () => onCaptionChange());
-$('#postType').addEventListener('change', e => { S.postType = e.target.value; if (CUR.post) CUR.post.type = S.postType; renderVariants(); insertTemplate(true); });
+$('#postType').addEventListener('change', e => { S.postType = e.target.value; if (CUR.post) { CUR.post.type = S.postType; schedulePostSave(); } renderVariants(); insertTemplate(true); });
 $('#capVariant').addEventListener('change', () => insertTemplate(true));
 $('#btnInsertTpl').addEventListener('click', () => insertTemplate(true));
+
+/* ---------------- post types & caption templates editor ---------------- */
+const TM = { t: 0, p: 0 };
+function openTypesModal(typeId) {
+  TM.t = Math.max(0, TYPES.findIndex(t => t.id === (typeId || S.postType)));
+  TM.p = Math.max(0, +$('#capVariant').value || 0);
+  renderTypesModal(); openModal('typesModal');
+}
+function placeholderList() {
+  return [{ label: 'チーム名' }, { label: 'アカウント' }, ...infoFields.map(f => ({ label: f.label }))];
+}
+function renderTypesModal() {
+  const t = TYPES[TM.t];
+  $('#tmTypes').innerHTML = TYPES.map((x, i) => `
+    <button class="layer-row w-full ${i === TM.t ? 'active' : ''}" data-tmt="${i}">
+      <span class="w-5 text-center">${esc(x.emoji || '・')}</span><span class="flex-1 truncate text-left">${esc(x.label)}</span>
+      <span class="text-[10px] text-slate-500">${(x.templates || []).length}</span>
+    </button>`).join('');
+  if (!t) { $('#tmTpls').innerHTML = ''; $('#tmEditor').innerHTML = ''; return; }
+  t.templates = t.templates || [];
+  TM.p = Math.min(TM.p, Math.max(0, t.templates.length - 1));
+  $('#tmTpls').innerHTML = t.templates.map((x, i) => `
+    <button class="layer-row w-full ${i === TM.p ? 'active' : ''}" data-tmp="${i}"><i class="fa-regular fa-file-lines text-slate-500 text-[11px]"></i><span class="flex-1 truncate text-left">${esc(x.name || '（無題）')}</span></button>`).join('')
+    || '<p class="text-[11px] text-slate-500 p-2">テンプレートがありません</p>';
+  const tpl = t.templates[TM.p];
+  $('#tmEditor').innerHTML = `
+    <div class="card grid grid-cols-[70px_1fr_150px_auto] gap-2 items-end">
+      <div><label class="lbl">絵文字</label><input class="field select-text text-center" data-tmf="emoji" value="${esc(t.emoji || '')}" maxlength="4"></div>
+      <div><label class="lbl">タイプ名</label><input class="field select-text" data-tmf="label" value="${esc(t.label)}"></div>
+      <div><label class="lbl">自動で付けるタグ</label><select class="field" data-tmf="tagGroup"><option value="">なし（共通のみ）</option>${tagGroups.map(g => `<option value="${g.id}" ${g.id === t.tagGroup ? 'selected' : ''}>${esc(g.label)}</option>`).join('')}</select></div>
+      <button class="btn hover:!border-hot hover:!text-hot" id="tmDelType" title="このタイプを削除"><i class="fa-regular fa-trash-can"></i></button>
+    </div>
+    ${tpl ? `
+    <div class="grid grid-cols-[1fr_auto] gap-2 items-end">
+      <div><label class="lbl">テンプレート名</label><input class="field select-text" data-tmp-f="name" value="${esc(tpl.name || '')}"></div>
+      <button class="btn hover:!border-hot hover:!text-hot" id="tmDelTpl"><i class="fa-regular fa-trash-can"></i>削除</button>
+    </div>
+    <textarea class="field flex-1 min-h-[200px] !text-[12px] leading-relaxed resize-none select-text" data-tmp-f="text" id="tmText">${esc(tpl.text || '')}</textarea>
+    <div class="text-[10px] text-slate-500">差し込み項目（クリックで挿入）：投稿情報の値に置き換わります</div>
+    <div class="flex flex-wrap gap-1">${placeholderList().map(p => `<span class="chip" data-tmph="${esc(p.label)}">{${esc(p.label)}}</span>`).join('')}</div>` : '<p class="text-[11px] text-slate-500">「テンプレートを追加」で文章を作成できます。</p>'}`;
+}
+function typesChanged() { saveTypes(); renderTypeSelects(); renderVariants(); renderPresetCards(); }
+$('#tmTypes').addEventListener('click', e => { const b = e.target.closest('[data-tmt]'); if (b) { TM.t = +b.dataset.tmt; TM.p = 0; renderTypesModal(); } });
+$('#tmTpls').addEventListener('click', e => { const b = e.target.closest('[data-tmp]'); if (b) { TM.p = +b.dataset.tmp; renderTypesModal(); } });
+$('#tmEditor').addEventListener('input', e => {
+  const t = TYPES[TM.t]; if (!t) return;
+  const f = e.target.dataset.tmf, pf = e.target.dataset.tmpF;
+  if (f) { t[f] = e.target.value; $$('#tmTypes [data-tmt]')[TM.t].querySelector('.flex-1').textContent = t.label; }
+  if (pf && t.templates[TM.p]) { t.templates[TM.p][pf] = e.target.value; if (pf === 'name') $$('#tmTpls [data-tmp]')[TM.p].querySelector('.flex-1').textContent = e.target.value || '（無題）'; }
+  clearTimeout(TM.timer); TM.timer = setTimeout(typesChanged, 300);
+});
+$('#tmEditor').addEventListener('change', e => { if (e.target.dataset.tmf === 'tagGroup') { TYPES[TM.t].tagGroup = e.target.value; typesChanged(); } });
+$('#tmEditor').addEventListener('click', e => {
+  const ph = e.target.closest('[data-tmph]');
+  if (ph) {
+    const ta = $('#tmText'); if (!ta) return;
+    const s = ta.selectionStart ?? ta.value.length, str = `{${ph.dataset.tmph}}`;
+    ta.value = ta.value.slice(0, s) + str + ta.value.slice(ta.selectionEnd ?? s);
+    ta.focus(); ta.selectionStart = ta.selectionEnd = s + str.length;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    return;
+  }
+  if (e.target.closest('#tmDelTpl')) {
+    const t = TYPES[TM.t];
+    if (!confirm(`テンプレート「${t.templates[TM.p]?.name || ''}」を削除しますか？`)) return;
+    t.templates.splice(TM.p, 1); TM.p = Math.max(0, TM.p - 1); typesChanged(); renderTypesModal();
+  }
+  if (e.target.closest('#tmDelType')) {
+    if (TYPES.length <= 1) return toast('投稿タイプは最低1つ必要です', 'fa-circle-info', 'text-sky');
+    const t = TYPES[TM.t];
+    if (!confirm(`投稿タイプ「${t.label}」を削除しますか？\nこのタイプの投稿・プリセットは「未分類」表示になります。`)) return;
+    TYPES.splice(TM.t, 1); TM.t = 0; TM.p = 0;
+    if (!typeById(S.postType)) S.postType = TYPES[0].id;
+    typesChanged(); renderTypesModal();
+  }
+});
+$('#tmAddTpl').addEventListener('click', () => {
+  const t = TYPES[TM.t]; if (!t) return;
+  t.templates.push({ name: '新しいテンプレート', text: '' });
+  TM.p = t.templates.length - 1; typesChanged(); renderTypesModal();
+  setTimeout(() => $('#tmEditor [data-tmp-f="name"]')?.select(), 0);
+});
+function addType() {
+  const label = $('#tmNewType').value.trim();
+  if (!label) return toast('タイプ名を入力してください', 'fa-circle-info', 'text-sky');
+  TYPES.push({ id: 't_' + uid(), label, emoji: '📝', tagGroup: '', templates: [{ name: '基本', text: '' }] });
+  $('#tmNewType').value = ''; TM.t = TYPES.length - 1; TM.p = 0; typesChanged(); renderTypesModal();
+}
+$('#tmAddType').addEventListener('click', addType);
+$('#tmNewType').addEventListener('keydown', e => { if (e.key === 'Enter') addType(); });
+$('#tmReset').addEventListener('click', () => {
+  if (!confirm('投稿タイプとキャプションテンプレートを初期状態に戻しますか？（追加・編集した内容は消えます）')) return;
+  TYPES = TYPES_DEFAULT(); TM.t = 0; TM.p = 0;
+  if (!typeById(S.postType)) S.postType = TYPES[0].id;
+  typesChanged(); renderTypesModal();
+});
+$('#btnEditTypes').addEventListener('click', () => openTypesModal());
+$('#btnTypesHome').addEventListener('click', () => openTypesModal(TYPES[0]?.id));
 
 function insertAtCursor(str) {
   const s = cap.selectionStart ?? cap.value.length, e = cap.selectionEnd ?? s;
@@ -2030,19 +2420,65 @@ $('#emojiBar').innerHTML = EMOJIS.map(e => `<button class="w-7 h-7 rounded-md ho
 $('#emojiBar').addEventListener('click', e => { const b = e.target.closest('[data-emo]'); if (b) insertAtCursor(b.dataset.emo); });
 
 /* ---------------- post info ---------------- */
-$$('[data-info]').forEach(el => {
-  el.addEventListener('input', () => {
-    S.info[el.dataset.info] = el.value; store.set('info', S.info);
-    if (CUR.post) { CUR.post.info = { ...S.info }; schedulePostSave(); }
-    updatePreviewMeta();
-  });
+function renderInfoFields() {
+  const builtIn = new Set(INFO_FIELDS_DEFAULT.map(f => f.key));
+  $('#infoFields').innerHTML = infoFields.map(f => `
+    <div class="${f.wide ? 'col-span-2' : ''}">
+      <label class="lbl flex items-center justify-between gap-1"><span class="truncate">${esc(f.label)} <span class="text-slate-600">{${esc(f.label)}}</span></span>
+        ${builtIn.has(f.key) ? '' : `<button class="text-slate-600 hover:text-hot" data-fdel="${f.key}" title="この項目を削除"><i class="fa-solid fa-xmark"></i></button>`}</label>
+      <input class="field select-text" data-info="${f.key}" value="${esc(S.info[f.key] ?? '')}">
+    </div>`).join('');
+  $('#placeholderChips').innerHTML = placeholderList().map(p => `<span class="chip" data-ph="${esc(p.label)}" title="選択中のテキストに挿入">{${esc(p.label)}}</span>`).join('');
+}
+const fillInfoInputs = renderInfoFields;
+$('#infoFields').addEventListener('input', e => {
+  const k = e.target.dataset.info; if (!k) return;
+  S.info[k] = e.target.value; store.set('info', S.info);
+  if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
+  updatePreviewMeta();
 });
-function fillInfoInputs() { $$('[data-info]').forEach(el => el.value = S.info[el.dataset.info] ?? ''); }
+$('#infoFields').addEventListener('click', e => {
+  const d = e.target.closest('[data-fdel]'); if (!d) return;
+  const f = infoFields.find(x => x.key === d.dataset.fdel);
+  if (!confirm(`項目「${f.label}」を削除しますか？（デザインやテンプレート内の {${f.label}} はそのまま残ります）`)) return;
+  infoFields = infoFields.filter(x => x !== f); store.set('infoFields', infoFields); renderInfoFields();
+});
+function addInfoField() {
+  const label = $('#newFieldLabel').value.trim().replace(/[{}]/g, '');
+  if (!label) return toast('項目名を入力してください', 'fa-circle-info', 'text-sky');
+  if (infoFields.some(f => f.label === label) || ['チーム名', 'アカウント'].includes(label)) return toast('同じ名前の項目があります', 'fa-circle-info', 'text-sky');
+  infoFields.push({ key: 'c_' + uid(), label, wide: true });
+  store.set('infoFields', infoFields); $('#newFieldLabel').value = ''; renderInfoFields();
+  toast(`項目「${label}」を追加しました。テキストに {${label}} と書くと差し込まれます`, 'fa-plus', 'text-accent', 3500);
+}
+$('#btnAddField').addEventListener('click', addInfoField);
+$('#newFieldLabel').addEventListener('keydown', e => { if (e.key === 'Enter') addInfoField(); });
+/* a placeholder chip goes into the selected text (or a new text) */
+$('#placeholderChips').addEventListener('click', e => {
+  const c = e.target.closest('[data-ph]'); if (!c) return;
+  const token = `{${c.dataset.ph}}`;
+  const o = canvas.getActiveObject();
+  if (o && o.type === 'textbox') {
+    if (o.isEditing) { o.insertChars(token); o.exitEditing(); } else o.set('text', (o.text ? o.text + ' ' : '') + token);
+    o.tpl = CUR.kind === 'post' ? o.text : null;
+    if (CUR.kind === 'post') o.set('text', fillInfo(o.tpl));
+    o.initDimensions(); o.setCoords(); canvas.requestRenderAll(); markDirty(o); saveHistory(); renderProps();
+  } else {
+    const t = addObj(T(token, { fontSize: 64, name: c.dataset.ph }));
+    if (CUR.kind === 'post') { t.tpl = token; t.set('text', fillInfo(token)); canvas.requestRenderAll(); }
+  }
+});
 $('#btnReapply').addEventListener('click', async () => {
-  if (!S.lastPreset) return toast('先に左の「デザインプリセット」を選んでください', 'fa-circle-info', 'text-sky');
-  if (S.dirty && !confirm('表示中のスライドをプリセットで作り直します（写真は保持）。よろしいですか？')) return;
-  await applyPreset(S.lastPreset, { caption: false });
-  insertTemplate(true);
+  const key = S.lastPreset;
+  if (key && PRESETS[key]) {
+    if (!S.dirty || confirm(`表示中のスライドを「${presetName(key)}」で作り直して、投稿情報を反映しますか？（写真は保持）\n\n「キャンセル」なら、差し込み項目の文字だけを更新します。`)) {
+      await applyPreset(key, { caption: false });
+    }
+  }
+  const n = fillTplTexts();
+  if (n) { markDirty({}); saveHistory(); }
+  if (!key && !n) return toast('このスライドには差し込み項目（{ }）のある文字がありません', 'fa-circle-info', 'text-sky', 3500);
+  if (CUR.kind === 'post') insertTemplate(true);
   toast('投稿情報を反映しました', 'fa-arrows-rotate');
 });
 
@@ -2100,7 +2536,8 @@ async function savePostNow() {
   captureSlide();
   CUR.post.updatedAt = Date.now();
   try {
-    await DB.put(CUR.post);
+    await docStore().put(CUR.post);
+    if (CUR.kind === 'preset') { await loadCustomPresets(); renderPresetCards(); }
     const d = new Date();
     setSaveState(`<i class="fa-solid fa-check text-accent"></i> 保存済み ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`);
   } catch (e) {
@@ -2111,6 +2548,8 @@ async function savePostNow() {
 function captureSlide() {
   if (!CUR.post) return;
   const s = CUR.post.slides[CUR.idx]; if (!s) return;
+  // in a preset, texts with {placeholders} become templates filled from each post's info
+  if (CUR.kind === 'preset') canvas.getObjects().forEach(o => { if (o.type === 'textbox') o.tpl = hasPlaceholder(o.text) ? o.text : null; });
   s.state = snapshot();
   s.thumb = renderDataURL(180, 'jpeg', 0.75);
 }
@@ -2337,6 +2776,7 @@ async function setCenterTab(t, { send = false } = {}) {
   $('#quickTools').classList.toggle('hidden', !quick);
   $('#craftTools').classList.toggle('hidden', quick); $('#craftTools').classList.toggle('flex', !quick);
   $('#objTools').classList.toggle('hidden', !quick);
+  $('#objBar').classList.toggle('hidden', !quick);
   $('#btnCraftMax').classList.toggle('hidden', quick);
   if (quick) { document.body.classList.remove('craft-max'); setTimeout(fitCanvas, 0); return; }
   Object.keys(CRAFT).forEach(k => frameOf(k).classList.toggle('hidden', k !== t));
@@ -2829,7 +3269,7 @@ $('#pubShare').addEventListener('click', async () => {
 const fmtDate = iso => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); const wd = '日月火水木金土'[new Date(+y, +m - 1, +d).getDay()]; return `${y}.${m}.${d}<span class="text-slate-500 text-[11px] ml-1">(${wd})</span>`; };
 const fmtDateTime = t => { if (!t) return ''; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
 async function renderHome() {
-  const all = await DB.all();
+  const all = await DB.posts.all();
   const q = $('#homeSearch').value.trim().toLowerCase(), st = $('#homeStatus').value, ty = $('#homeType').value, so = $('#homeSort').value;
   let list = all.filter(p => (!q || (p.title || '').toLowerCase().includes(q)) && (!st || (p.status || 'draft') === st) && (!ty || p.type === ty));
   list.sort((a, b) => so === 'upd-desc' ? b.updatedAt - a.updatedAt
@@ -2858,7 +3298,7 @@ async function renderHome() {
         <div class="text-sm font-bold text-white truncate hover:text-accent">${esc(p.title || '（無題）')}</div>
         <div class="text-[11px] text-slate-500 truncate mt-0.5">${esc((p.caption || '').split('\n').find(l => l.trim()) || 'キャプション未入力')}</div>
       </div>
-      <div><span class="badge ${TYPE_BADGE[p.type] || ''}">${POST_TYPES[p.type] || '-'}</span></div>
+      <div><span class="badge ${typeBadge(p.type)}">${esc(typeLabel(p.type))}</span></div>
       <div class="text-xs text-slate-300"><i class="fa-regular fa-images text-slate-500 mr-1"></i>${n}枚</div>
       <div>${posted ? `<span class="badge bg-accent/15 text-accent"><i class="fa-solid fa-check"></i>投稿済み</span>${p.permalink ? `<a href="${esc(p.permalink)}" target="_blank" rel="noopener" class="block text-[10px] text-sky mt-1 hover:underline">投稿を見る</a>` : `<div class="text-[10px] text-slate-500 mt-1">${fmtDateTime(p.postedAt)}</div>`}` : '<span class="badge bg-amber-400/10 text-amber-300"><i class="fa-solid fa-pen"></i>下書き</span>'}</div>
       <div class="flex justify-end gap-1.5">
@@ -2877,35 +3317,185 @@ $('#postList').addEventListener('click', async e => {
   const id = row.dataset.pid;
   if (act === 'edit') location.hash = '#/post/' + id;
   if (act === 'copy') {
-    const p = await DB.get(id);
+    const p = await DB.posts.get(id);
     const c = JSON.parse(JSON.stringify(p));
     Object.assign(c, { id: uid(), title: (p.title || '') + '（コピー）', status: 'draft', postedAt: null, permalink: '', createdAt: Date.now(), updatedAt: Date.now() });
     c.slides.forEach(s => s.id = uid());
-    await DB.put(c); renderHome();
+    await DB.posts.put(c); renderHome();
     toast('投稿をコピーしました', 'fa-copy');
   }
   if (act === 'del') {
-    const p = await DB.get(id);
+    const p = await DB.posts.get(id);
     if (!confirm(`「${p.title || '（無題）'}」を削除しますか？\nこの操作は元に戻せません。`)) return;
-    await DB.del(id); renderHome();
+    await DB.posts.del(id); renderHome();
     toast('投稿を削除しました', 'fa-trash-can');
   }
 });
+
+/* ---------------- home: design presets ---------------- */
+let homePresetFilter = '';
+function showHomeTab(tab) {
+  $$('#homeTabs [data-home]').forEach(b => b.classList.toggle('on', b.dataset.home === tab));
+  $('#homePosts').classList.toggle('hidden', tab !== 'posts');
+  $('#homePresets').classList.toggle('hidden', tab !== 'presets');
+  tab === 'presets' ? renderPresetList() : renderHome();
+}
+$('#homeTabs').addEventListener('click', e => { const b = e.target.closest('[data-home]'); if (b) location.hash = b.dataset.home === 'presets' ? '#/presets' : ''; });
+async function renderPresetList() {
+  await loadCustomPresets();
+  const used = [...new Set(CUSTOM.map(p => p.type))];
+  if (homePresetFilter && !used.includes(homePresetFilter)) homePresetFilter = '';
+  $('#presetTypeFilter').innerHTML = [['', 'すべて'], ...used.map(id => [id, typeLabel(id)])]
+    .map(([id, l]) => `<button class="chip ${homePresetFilter === id ? 'on' : ''}" data-hpf="${id}">${esc(l)}</button>`).join('');
+  const list = CUSTOM.filter(p => !homePresetFilter || p.type === homePresetFilter);
+  if (!CUSTOM.length) {
+    $('#presetList').innerHTML = `<div class="col-span-full py-16 text-center bg-panel border border-line rounded-2xl">
+      <i class="fa-solid fa-wand-magic-sparkles text-4xl text-slate-600"></i>
+      <p class="text-sm text-slate-300 mt-4 font-bold">オリジナルのプリセットはまだありません</p>
+      <p class="text-xs text-slate-500 mt-1">「プリセットを作成」から、チーム専用のデザインを作りましょう。<br>編集画面の「デザイン › スライドを保存」で、作ったスライドをそのまま登録することもできます。</p>
+      <button class="btn btn-accent mt-5 !px-5 !py-2.5" data-hp-new><i class="fa-solid fa-plus"></i>プリセットを作成</button></div>`;
+    return;
+  }
+  $('#presetList').innerHTML = list.map(p => {
+    const [w, h] = RATIOS[p.ratio] || RATIOS['4:5'];
+    return `<div class="bg-panel border border-line rounded-2xl overflow-hidden flex flex-col" data-hpid="${p.id}">
+      <button class="relative bg-ink" style="aspect-ratio:${w} / ${h}; max-height:260px" data-hpa="edit" title="編集">
+        ${p.slides?.[0]?.thumb ? `<img src="${p.slides[0].thumb}" class="absolute inset-0 w-full h-full object-contain">` : '<i class="fa-regular fa-image text-3xl text-slate-600"></i>'}
+        <span class="absolute top-2 left-2 badge bg-ink/85 text-slate-300">${p.ratio}</span>
+      </button>
+      <div class="p-3 flex-1 flex flex-col gap-1.5">
+        <div class="text-sm font-bold text-white truncate" title="${esc(p.title)}">${esc(p.title || '（無題）')}</div>
+        <div class="flex items-center gap-1.5"><span class="badge ${typeBadge(p.type)}">${esc(typeLabel(p.type))}</span><span class="text-[10px] text-slate-500 truncate">${esc(p.sub || '')}</span></div>
+        <div class="grid grid-cols-[1fr_auto_auto] gap-1 mt-auto pt-1">
+          <button class="btn !px-2 !py-1.5 !text-[11px] btn-accent" data-hpa="use"><i class="fa-solid fa-plus"></i>投稿を作成</button>
+          <button class="btn !px-2 !py-1.5" data-hpa="copy" title="コピー"><i class="fa-regular fa-copy"></i></button>
+          <button class="btn !px-2 !py-1.5 hover:!border-hot hover:!text-hot" data-hpa="del" title="削除"><i class="fa-regular fa-trash-can"></i></button>
+        </div>
+        <button class="btn !py-1.5 !text-[11px]" data-hpa="edit"><i class="fa-solid fa-pen-to-square"></i>デザインを編集</button>
+      </div>
+    </div>`;
+  }).join('') || '<p class="col-span-full text-xs text-slate-500 py-10 text-center">この分類のプリセットはありません</p>';
+}
+$('#presetTypeFilter').addEventListener('click', e => { const c = e.target.closest('[data-hpf]'); if (c) { homePresetFilter = c.dataset.hpf; renderPresetList(); } });
+async function copyPreset(id) {
+  const p = await DB.presets.get(id);
+  const c = JSON.parse(JSON.stringify(p));
+  Object.assign(c, { id: uid(), title: (p.title || '') + '（コピー）', createdAt: Date.now(), updatedAt: Date.now() });
+  c.slides.forEach(s => s.id = uid());
+  await DB.presets.put(c); await loadCustomPresets();
+  return c;
+}
+async function deletePreset(id) {
+  const p = await DB.presets.get(id);
+  if (!p || !confirm(`プリセット「${p.title || '（無題）'}」を削除しますか？\nこの操作は元に戻せません（作成済みの投稿はそのまま残ります）。`)) return false;
+  await DB.presets.del(id); await loadCustomPresets();
+  toast('プリセットを削除しました', 'fa-trash-can');
+  return true;
+}
+$('#presetList').addEventListener('click', async e => {
+  if (e.target.closest('[data-hp-new]')) return openPresetModal('new');
+  const card = e.target.closest('[data-hpid]'); if (!card) return;
+  const act = e.target.closest('[data-hpa]')?.dataset.hpa; if (!act) return;
+  const id = card.dataset.hpid;
+  if (act === 'edit') location.hash = '#/preset/' + id;
+  if (act === 'copy') { await copyPreset(id); renderPresetList(); toast('プリセットをコピーしました', 'fa-copy'); }
+  if (act === 'del' && await deletePreset(id)) renderPresetList();
+  if (act === 'use') openNewModal({ preset: 'c:' + id });
+});
+$('#btnNewPreset').addEventListener('click', () => openPresetModal('new'));
+
+/* ---------------- preset modal: new preset / save the shown slide as a preset ---------------- */
+let pmMode = 'new';
+function openPresetModal(mode) {
+  pmMode = mode;
+  const save = mode === 'save';
+  $('#pmTitle').innerHTML = save ? 'SAVE AS <span class="text-accent">PRESET</span>' : 'NEW <span class="text-accent">PRESET</span>';
+  $('#pmCreateLabel').textContent = save ? 'プリセットとして保存' : '作成して編集へ';
+  $('#pmBaseBox').classList.toggle('hidden', save);
+  $('#pmRatioBox').classList.toggle('hidden', save);
+  $('#pmReplaceBox').classList.toggle('hidden', !save);
+  renderTypeSelects();
+  $('#pmType').value = typeById(S.postType) ? S.postType : TYPES[0].id;
+  $('#pmRatio').value = CUR.post ? S.ratio : '4:5';
+  $('#pmName').value = save ? `${CUR.post?.title || ''} のデザイン`.trim() : '';
+  $('#pmSub').value = '';
+  $('#pmBase').innerHTML = '<option value="">白紙（背景のみ）</option>' +
+    `<optgroup label="標準プリセット">${Object.entries(PRESETS).map(([k, p]) => `<option value="${k}">${esc(p.title)}（${esc(p.sub)}）</option>`).join('')}</optgroup>` +
+    (CUSTOM.length ? `<optgroup label="オリジナル">${CUSTOM.map(p => `<option value="c:${p.id}">${esc(p.title)}</option>`).join('')}</optgroup>` : '');
+  $('#pmBase').value = save ? '' : 'match';
+  openModal('presetModal'); setTimeout(() => $('#pmName').focus(), 50);
+}
+/* the post's own values in a slide's texts become {placeholders} */
+function placeholderize(stateStr) {
+  const st = JSON.parse(stateStr);
+  const pairs = [[S.team.name, 'チーム名'], ['@' + S.team.account, 'アカウント'], ...infoFields.map(f => [S.info[f.key], f.label])]
+    .filter(([v]) => v && String(v).trim().length >= 2).sort((a, b) => String(b[0]).length - String(a[0]).length);
+  (st.json.objects || []).forEach(o => {
+    if (o.type !== 'textbox' || !o.text) return;
+    let t = o.tpl || o.text;
+    if (!o.tpl) for (const [v, label] of pairs) t = t.split(String(v)).join(`{${label}}`);
+    o.text = t; o.tpl = hasPlaceholder(t) ? t : null;
+  });
+  return JSON.stringify(st);
+}
+$('#pmCreate').addEventListener('click', async () => {
+  const title = $('#pmName').value.trim() || 'オリジナルプリセット';
+  const base = { id: uid(), kind: 'preset', title, type: $('#pmType').value, sub: $('#pmSub').value.trim(), createdAt: Date.now(), updatedAt: Date.now() };
+  if (pmMode === 'save') {
+    captureSlide();
+    const s = CUR.post.slides[CUR.idx];
+    const state = $('#pmReplace').checked ? placeholderize(s.state) : s.state;
+    await DB.presets.put({ ...base, ratio: S.ratio, slides: [{ id: uid(), state, thumb: s.thumb }] });
+    await loadCustomPresets(); renderPresetCards();
+    closeModal('presetModal');
+    toast(`プリセット「${title}」を保存しました（デザインタブから使えます）`, 'fa-floppy-disk', 'text-accent', 3500);
+    return;
+  }
+  const from = $('#pmBase').value;
+  const preset = { ...base, ratio: $('#pmRatio').value, slides: [{ id: uid(), state: null, thumb: '' }] };
+  if (from.startsWith('c:')) {
+    const src = customById(from.slice(2));
+    preset.slides = JSON.parse(JSON.stringify(src.slides.slice(0, 1))); preset.slides[0].id = uid();
+    if (src.ratio !== preset.ratio) preset._init = { ratio: true };
+  } else if (from) preset._init = { base: from };
+  await DB.presets.put(preset); await loadCustomPresets();
+  closeModal('presetModal');
+  location.hash = '#/preset/' + preset.id;
+});
+$('#btnCreatePreset').addEventListener('click', () => openPresetModal('new'));
+$('#btnSaveAsPreset').addEventListener('click', () => openPresetModal('save'));
 
 /* new post */
 const DEFAULT_PRESET = { match: 'match', training: 'result', announce: 'announce', sponsor: 'sponsor' };
 function defaultTitle(type) {
   const i = store.get('info', INFO_DEFAULT);
-  return { match: `MATCH DAY vs ${i.opponent}`, training: `練習試合 vs ${i.opponent}`, announce: 'お知らせ', sponsor: `スポンサー紹介 ${i.sponsor}` }[type];
+  return { match: `MATCH DAY vs ${i.opponent}`, training: `練習試合 vs ${i.opponent}`, announce: 'お知らせ', sponsor: `スポンサー紹介 ${i.sponsor}` }[type] || typeLabel(type);
 }
-function openNewModal() {
-  $('#nDate').value = todayISO(); $('#nType').value = 'match'; $('#nRatio').value = '4:5';
-  $('#nPreset').value = 'match'; $('#nTitle').value = ''; $('#nTitle').placeholder = '例：' + defaultTitle('match');
+function defaultPresetFor(type) {
+  return DEFAULT_PRESET[type] || (CUSTOM.find(p => p.type === type) ? 'c:' + CUSTOM.find(p => p.type === type).id : '');
+}
+function renderNewPresetOptions() {
+  const byType = id => CUSTOM.filter(p => p.type === id);
+  $('#nPreset').innerHTML =
+    (CUSTOM.length ? `<optgroup label="オリジナル">${CUSTOM.map(p => `<option value="c:${p.id}">${esc(p.title)}（${esc(typeLabel(p.type))}・${p.ratio}）</option>`).join('')}</optgroup>` : '') +
+    `<optgroup label="標準プリセット">${Object.entries(PRESETS).map(([k, p]) => `<option value="${k}">${esc(p.title)}（${esc(p.sub)}）</option>`).join('')}</optgroup>` +
+    '<option value="">白紙（背景のみ）</option>';
+  return byType;
+}
+async function openNewModal(opts = {}) {
+  await loadCustomPresets();
+  renderTypeSelects(); renderNewPresetOptions();
+  const pre = opts.preset && opts.preset.startsWith('c:') ? customById(opts.preset.slice(2)) : null;
+  const type = pre && typeById(pre.type) ? pre.type : (TYPES.find(t => t.id === 'match') || TYPES[0]).id;
+  $('#nDate').value = todayISO(); $('#nType').value = type; $('#nRatio').value = pre ? pre.ratio : '4:5';
+  $('#nPreset').value = opts.preset || defaultPresetFor(type);
+  $('#nTitle').value = ''; $('#nTitle').placeholder = '例：' + defaultTitle(type);
   openModal('newModal'); setTimeout(() => $('#nTitle').focus(), 50);
 }
-$('#nType').addEventListener('change', () => { const t = $('#nType').value; $('#nPreset').value = DEFAULT_PRESET[t]; $('#nTitle').placeholder = '例：' + defaultTitle(t); });
-$('#btnNew').addEventListener('click', openNewModal);
-$('#btnNewTop').addEventListener('click', openNewModal);
+$('#nType').addEventListener('change', () => { const t = $('#nType').value; $('#nPreset').value = defaultPresetFor(t); $('#nTitle').placeholder = '例：' + defaultTitle(t); });
+$('#nPreset').addEventListener('change', () => { const v = $('#nPreset').value; if (v.startsWith('c:')) { const p = customById(v.slice(2)); if (p) $('#nRatio').value = p.ratio; } });
+$('#btnNew').addEventListener('click', () => openNewModal());
+$('#btnNewTop').addEventListener('click', () => openNewModal());
 $('#nCreate').addEventListener('click', async () => {
   const type = $('#nType').value;
   const post = {
@@ -2914,58 +3504,87 @@ $('#nCreate').addEventListener('click', async () => {
     slides: [{ id: uid(), state: null, thumb: '' }], status: 'draft', createdAt: Date.now(), updatedAt: Date.now(),
     _init: { preset: $('#nPreset').value }
   };
-  await DB.put(post);
+  await DB.posts.put(post);
   closeModal('newModal');
   location.hash = '#/post/' + post.id;
 });
 
 /* ==========================================================
-   ROUTING
+   ROUTING  (#/post/<id>, #/preset/<id>, #/presets, home)
    ========================================================== */
-async function openPost(id) {
-  const post = await DB.get(id);
-  if (!post) { toast('投稿が見つかりません', 'fa-triangle-exclamation', 'text-hot'); location.hash = ''; return; }
-  CUR.post = post; CUR.idx = 0;
-  document.body.classList.remove('view-home'); document.body.classList.add('view-editor');
-  S.info = { ...INFO_DEFAULT, ...(post.info || {}) }; fillInfoInputs();
-  S.postType = post.type || 'match'; $('#postType').value = S.postType; renderVariants();
-  $('#postTitle').value = post.title || ''; $('#postDate').value = post.date || '';
-  cap.value = post.caption || ''; S.lastTemplate = post.lastTemplate || '';
-  S.ratio = post.ratio; [S.W, S.H] = RATIOS[post.ratio];
+async function openDoc(kind, id) {
+  const doc = await (kind === 'preset' ? DB.presets : DB.posts).get(id);
+  if (!doc) { toast(kind === 'preset' ? 'プリセットが見つかりません' : '投稿が見つかりません', 'fa-triangle-exclamation', 'text-hot'); location.hash = kind === 'preset' ? '#/presets' : ''; return; }
+  await loadCustomPresets();
+  CUR.kind = kind; CUR.post = doc; CUR.idx = 0;
+  document.body.classList.remove('view-home', 'mode-post', 'mode-preset');
+  document.body.classList.add('view-editor', 'mode-' + kind);
+  $('#btnBackLabel').textContent = kind === 'preset' ? 'プリセット一覧' : '投稿リスト';
+  $('#postTitle').placeholder = kind === 'preset' ? 'プリセット名' : '投稿タイトル';
+  $('#postTitle').value = doc.title || '';
+  renderTypeSelects();
+  if (kind === 'post') {
+    S.info = { ...INFO_DEFAULT, ...(doc.info || {}) };
+    S.postType = typeById(doc.type) ? doc.type : TYPES[0].id; $('#postType').value = S.postType; renderVariants();
+    $('#postDate').value = doc.date || '';
+    cap.value = doc.caption || ''; S.lastTemplate = doc.lastTemplate || '';
+  } else {
+    S.info = { ...INFO_DEFAULT, ...store.get('info', {}) };
+    $('#presetType').value = typeById(doc.type) ? doc.type : TYPES[0].id;
+    $('#presetSub').value = doc.sub || '';
+    showLeftTab('tpl');
+  }
+  renderInfoFields();
+  S.ratio = doc.ratio; [S.W, S.H] = RATIOS[doc.ratio];
   await setCenterTab('quick');
   await fontsReady;
   fitCanvas();
   await loadSlide(0, { skipCapture: true });
-  if (post._init) {
-    const init = post._init; delete post._init;
-    if (init.preset) await applyPreset(init.preset, { caption: false });
-    const variant = init.preset === 'recruit' ? 1 : 0;
-    renderVariants(); $('#capVariant').value = variant;
-    insertTemplate(false);
+  if (doc._init) {
+    const init = doc._init; delete doc._init;
+    if (init.preset || init.base) await applyPreset(init.preset || init.base, { caption: false });
+    if (init.ratio && S.ratio !== doc.ratio) await setRatio(doc.ratio, { record: false });
+    if (kind === 'post') {
+      renderVariants(); $('#capVariant').value = init.preset === 'recruit' ? 1 : 0;
+      insertTemplate(false);
+    }
     resetHistory();
     await savePostNow();
     renderStrip();
   }
-  onCaptionChange();
+  renderPresetCards();
+  if (kind === 'post') onCaptionChange();
   setSaveState('<i class="fa-solid fa-check text-accent"></i> 保存済み');
 }
-async function closePost() {
+const openPost = id => openDoc('post', id);
+async function closePost(homeTab = 'posts') {
   if (CUR.post) await savePostNow();
-  CUR.post = null;
+  CUR.post = null; CUR.kind = 'post';
   closePreview();
-  document.body.classList.remove('view-editor', 'craft-max'); document.body.classList.add('view-home');
-  renderHome();
+  document.body.classList.remove('view-editor', 'craft-max', 'mode-post', 'mode-preset'); document.body.classList.add('view-home');
+  showHomeTab(homeTab);
 }
 async function route() {
-  const m = location.hash.match(/^#\/post\/(.+)$/);
-  if (m) { if (CUR.post?.id !== m[1]) { if (CUR.post) await savePostNow(); await openPost(m[1]); } }
-  else await closePost();
+  const m = location.hash.match(/^#\/(post|preset)\/(.+)$/);
+  if (m) {
+    const kind = m[1], id = m[2];
+    if (CUR.post?.id !== id || CUR.kind !== kind) { if (CUR.post) await savePostNow(); await openDoc(kind, id); }
+  } else await closePost(location.hash === '#/presets' ? 'presets' : 'posts');
 }
 window.addEventListener('hashchange', route);
-$('#btnBack').addEventListener('click', () => { location.hash = ''; });
-$('#logoBtn').addEventListener('click', () => { location.hash = ''; });
+$('#btnBack').addEventListener('click', () => { location.hash = CUR.kind === 'preset' ? '#/presets' : ''; });
+$('#logoBtn').addEventListener('click', () => { location.hash = CUR.kind === 'preset' ? '#/presets' : ''; });
 $('#postTitle').addEventListener('input', () => { if (CUR.post) { CUR.post.title = $('#postTitle').value; schedulePostSave(); } });
 $('#postDate').addEventListener('change', () => { if (CUR.post) { CUR.post.date = $('#postDate').value; schedulePostSave(); } });
+/* preset editor: right panel */
+$('#presetType').addEventListener('change', e => { if (CUR.kind === 'preset') { CUR.post.type = e.target.value; schedulePostSave(); } });
+$('#presetSub').addEventListener('input', e => { if (CUR.kind === 'preset') { CUR.post.sub = e.target.value; schedulePostSave(); } });
+$('#btnPresetInsertTpl').addEventListener('click', () => { LAY.left = true; applyLayout(); showLeftTab('info'); });
+$('#btnPresetDup').addEventListener('click', async () => { await savePostNow(); const c = await copyPreset(CUR.post.id); location.hash = '#/preset/' + c.id; toast('コピーを作成しました', 'fa-copy'); });
+$('#btnPresetDelete').addEventListener('click', async () => { const id = CUR.post.id; if (await deletePreset(id)) { CUR.post = null; location.hash = '#/presets'; } });
+const usePreset = async () => { await savePostNow(); openNewModal({ preset: 'c:' + CUR.post.id }); };
+$('#btnPresetUse').addEventListener('click', usePreset);
+$('#btnPresetUseTop').addEventListener('click', usePreset);
 $$('#ratioBtns .ratio-btn').forEach(b => b.addEventListener('click', () => changeRatioAll(b.dataset.ratio)));
 $('#btnUndo').addEventListener('click', undo);
 $('#btnRedo').addEventListener('click', redo);
@@ -2998,9 +3617,11 @@ document.addEventListener('keydown', e => {
   await DB.open();
   if (!DB.db) toast('このブラウザでは保存領域が使えないため、投稿は再読み込みで消えます', 'fa-triangle-exclamation', 'text-hot', 5000);
   bindTeam();
+  await loadCustomPresets();
+  renderTypeSelects(); renderInfoFields();
   renderPresetCards(); renderBgPane(); renderTagGroups(); renderMentions(); renderGallery(); renderQuickTools();
   renderIgChip(); updatePreviewMeta();
-  renderVariants();
+  renderVariants(); syncObjBar();
   initFolds(); applyLayout(false);
   if (location.protocol === 'file:') toast('PhotoCraft / VectorCraft を使うには start.bat から起動してください', 'fa-circle-info', 'text-sky', 5000);
   await route();
