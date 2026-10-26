@@ -665,10 +665,9 @@
   <div class="w-[460px] bg-panel border border-line rounded-2xl p-7 text-center space-y-4">
     <div class="w-14 h-14 rounded-2xl bg-accent/10 text-accent flex items-center justify-center mx-auto"><i class="fa-solid fa-lock text-2xl"></i></div>
     <div class="font-display text-3xl text-white">STAFF <span class="text-accent">LOGIN</span></div>
-    <p class="text-xs text-slate-300 leading-relaxed">instaCRAFT の投稿リスト・デザインプリセット・設定は、STAFF 全員で共有しています。<br>CRAQUES HUB の管理画面で STAFF としてログインしてから開いてください。</p>
-    <div class="grid grid-cols-2 gap-2 pt-2">
-      <a class="btn btn-accent !py-2.5" href="/admin" target="_blank" rel="noopener"><i class="fa-solid fa-right-to-bracket"></i>管理画面でログイン</a>
-      <button class="btn !py-2.5" onclick="location.reload()"><i class="fa-solid fa-rotate-right"></i>ログインしたので再読み込み</button>
+    <p class="text-xs text-slate-300 leading-relaxed">instaCRAFT の投稿リスト・デザインプリセット・設定は、STAFF 全員で共有しています。<br>CRAQUES HUB の管理画面に STAFF としてログインし、メニューの <b class="text-accent">instaCRAFT</b> アイコンから開いてください。</p>
+    <div class="pt-2">
+      <a class="btn btn-accent !py-2.5 w-full" href="https://club-attendance-system-phi.vercel.app/admin"><i class="fa-solid fa-right-to-bracket"></i>CRAQUES HUB 管理画面へ</a>
     </div>
   </div>
 </div>
@@ -994,24 +993,46 @@ DB.presets = makeStore('presets');
 /* the store an open document (post or preset) lives in */
 const docStore = () => (CUR.kind === 'preset' ? DB.presets : DB.posts);
 
-/* ---------------- shared storage (CRAQUES HUB /instacraft) ----------------
-   Opened at CRAQUES HUB's /instacraft, posts, presets and settings live in its database (Turso),
-   so every logged-in STAFF works on the same data. Anywhere else (localhost, GitHub Pages) they
-   stay in this browser (IndexedDB / localStorage). */
-const REMOTE = /^\/instacraft(\/|$)/.test(location.pathname);
-function adminToken() {
+/* ---------------- shared storage (Cloudflare) ----------------
+   Opened from GitHub Pages (/instacraft/), posts, presets, images and settings live in the
+   instaCRAFT API on Cloudflare (Worker + D1), so every STAFF works on the same data. It is kept
+   apart from CRAQUES HUB on purpose: nothing here can use up the attendance system's quota.
+   Entry: CRAQUES HUB's admin icon opens us with #ticket=… (60 s, one time) → our own session.
+   Anywhere else (localhost) data stays in this browser (IndexedDB / localStorage). */
+const REMOTE = /^\/instacraft(\/|$)/.test(location.pathname) || /[?&]shared\b/.test(location.search);
+const API_BASE = (store.get('apiBase', '') || 'https://instacraft-api.craques-instacraft.workers.dev').replace(/\/$/, '');
+const HUB_ADMIN = 'https://club-attendance-system-phi.vercel.app/admin';
+function session() {
   try {
-    const s = JSON.parse(localStorage.getItem('admin_session_v1') || 'null');
-    return s && s.token && Date.now() < s.expiresAt ? s.token : '';
-  } catch (e) { return ''; }
+    const s = JSON.parse(localStorage.getItem('tps_session') || 'null');
+    return s && s.token && Date.now() < s.expiresAt ? s : null;
+  } catch (e) { return null; }
 }
-function adminName() { try { return JSON.parse(localStorage.getItem('admin_session_v1') || 'null')?.name || ''; } catch (e) { return ''; } }
+const adminToken = () => session()?.token || '';
+const adminName = () => session()?.name || '';
 function showLoginGate() { $('#loginGate').classList.add('open'); }
+/* #ticket=… from CRAQUES HUB → a session of our own (then the ticket leaves the address bar) */
+async function exchangeTicket() {
+  const m = location.hash.match(/^#ticket=([\w.-]+)$/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  try {
+    const r = await fetch(API_BASE + '/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticket: m[1] }) });
+    const j = await r.json();
+    if (!j.success) throw new Error(j.error);
+    localStorage.setItem('tps_session', JSON.stringify(j.data));
+  } catch (e) {
+    toast('ログインできませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 6000);
+  }
+}
 async function api(action, payload = {}) {
-  const r = await fetch('/api/gas', { method: 'POST', body: JSON.stringify({ action, payload: { ...payload, adminToken: adminToken() } }) });
+  let r;
+  try {
+    r = await fetch(API_BASE + '/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + adminToken() }, body: JSON.stringify({ action, payload }) });
+  } catch (e) { throw new Error('共有データのサーバーに接続できません'); }
   const j = await r.json().catch(() => ({ success: false, error: 'サーバーに接続できません（HTTP ' + r.status + '）' }));
   if (!j.success) {
-    if (j.error === 'ADMIN_AUTH_REQUIRED') { showLoginGate(); throw new Error('ログインが必要です'); }
+    if (j.error === 'LOGIN_REQUIRED') { localStorage.removeItem('tps_session'); showLoginGate(); throw new Error('ログインが必要です'); }
     throw new Error(j.error || 'エラーが発生しました');
   }
   return j.data;
@@ -1024,7 +1045,7 @@ function shrinkDataURL(src) {
     im.onload = () => {
       const c = document.createElement('canvas');
       let s = 1, out = src;
-      for (let n = 0; n < 6 && out.length > 3_900_000; n++) {
+      for (let n = 0; n < 8 && out.length > 1_400_000; n++) {
         s *= 0.8; c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
         const x = c.getContext('2d'); x.clearRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height);
         out = c.toDataURL('image/webp', 0.9);
@@ -1037,7 +1058,7 @@ function shrinkDataURL(src) {
 }
 async function uploadImage(dataUrl) {
   if (IMG_URL.has(dataUrl)) return IMG_URL.get(dataUrl);
-  const data = dataUrl.length > 3_900_000 ? await shrinkDataURL(dataUrl) : dataUrl;
+  const data = dataUrl.length > 1_400_000 ? await shrinkDataURL(dataUrl) : dataUrl;
   const { url } = await api('icSaveImage', { data });
   IMG_URL.set(dataUrl, url);
   return url;
@@ -1047,7 +1068,7 @@ async function externalizeImages(stateStr) {
   const st = JSON.parse(stateStr);
   const walk = async objs => {
     for (const o of objs || []) {
-      if (o.type === 'image' && typeof o.src === 'string' && o.src.startsWith('data:')) o.src = await uploadImage(o.src);
+      if (o.type === 'image' && typeof o.src === 'string' && o.src.startsWith('data:')) { o.src = await uploadImage(o.src); o.crossOrigin = 'anonymous'; }
       if (o.objects) await walk(o.objects);
     }
   };
@@ -3787,6 +3808,7 @@ document.addEventListener('keydown', e => {
 (async function init() {
   await DB.open();
   if (REMOTE) {
+    await exchangeTicket();
     if (!adminToken()) { showLoginGate(); return; }
     try { await loadSharedSettings(); await migrateLocalDocs(); }
     catch (e) { if (adminToken()) toast('共有データを読み込めませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 6000); return; }

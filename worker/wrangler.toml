@@ -1,0 +1,13 @@
+# instaCRAFT shared-data API — deploy: npx wrangler deploy (from this folder)
+# Secret (same value as CRAQUES HUB's INSTACRAFT_SSO_SECRET on Vercel):  npx wrangler secret put SSO_SECRET
+name = "instacraft-api"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://holamigos27.github.io,http://localhost:8765"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "instacraft"
+database_id = "a2b2e4dc-2e1a-4405-bc07-f9cd469c60c7"
