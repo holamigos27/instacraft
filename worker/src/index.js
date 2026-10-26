@@ -7,7 +7,7 @@
 const SESSION_MS = 14 * 24 * 3600 * 1000;
 const MAX_DOC_CHARS = 1_900_000; // D1 keeps rows up to 2 MB
 const MAX_IMAGE_BYTES = 1_950_000;
-const SETTING_NAMES = ['team', 'types', 'tagGroups', 'infoFields', 'mentions', 'assets'];
+const SETTING_NAMES = ['team', 'types', 'tagGroups', 'infoFields', 'mentions', 'assets', 'blocks', 'masters'];
 const KINDS = new Set(['post', 'preset']);
 const MAKE_HOOK = /^https:\/\/hook\.[a-z0-9-]+\.make\.com\/[A-Za-z0-9_-]+$/;
 async function makeHook(env) {

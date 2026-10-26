@@ -236,10 +236,19 @@
 <!-- ============ HOME (POST LIST) ============ -->
 <section id="viewHome" class="only-home h-[calc(100vh-56px)] overflow-y-auto">
   <div class="max-w-[1180px] mx-auto px-6 py-8">
-    <div class="seg w-[540px] max-w-full mb-6" id="homeTabs">
+    <div class="seg w-[720px] max-w-full mb-6" id="homeTabs">
       <button class="on !py-2" data-home="posts"><i class="fa-regular fa-images mr-1.5"></i>投稿リスト</button>
       <button class="!py-2" data-home="presets"><i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i>デザインプリセット</button>
       <button class="!py-2" data-home="assets"><i class="fa-solid fa-shield-halved mr-1.5"></i>エンブレム・ロゴ</button>
+      <button class="!py-2" data-home="masters"><i class="fa-solid fa-list-ul mr-1.5"></i>大会・会場・対戦相手</button>
+    </div>
+
+    <div id="homeMasters" class="hidden">
+      <div class="mb-6">
+        <div class="font-display text-5xl text-white leading-none">MATCH <span class="text-accent">DATA</span></div>
+        <p class="text-xs text-slate-400 mt-2">大会名・会場名・対戦相手を登録します。編集画面の「試合情報」でリストから選べます。対戦相手にはエンブレムを紐づけられ、「反映」で相手エンブレムの枠に自動で入ります（STAFF全員で共有）。</p>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5" id="masterLists"></div>
     </div>
 
     <div id="homeAssets" class="hidden">
@@ -603,7 +612,7 @@
             <button class="btn !px-2.5" id="btnInsertTpl" title="テンプレートを挿入"><i class="fa-solid fa-file-import"></i>挿入</button>
             <button class="btn !px-2.5" id="btnEditTypes" title="投稿タイプとキャプションテンプレートを編集"><i class="fa-solid fa-pen-to-square"></i></button>
           </div>
-          <label class="ctl-row mt-2 text-[11px]"><input type="checkbox" id="autoTags" checked>テンプレ挿入時にハッシュタグも自動追加</label>
+          <label class="ctl-row mt-2 text-[11px]"><input type="checkbox" id="autoTags" checked>テンプレ挿入時に定型文とハッシュタグも自動追加</label>
         </div>
 
         <div class="preset-only">
@@ -622,6 +631,21 @@
         </div>
 
         <div class="post-only">
+          <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-flag-checkered"></i>試合情報</span>
+            <a href="#/masters" class="tracking-normal normal-case font-normal text-[10px] text-accent hover:underline">リストを管理</a></div>
+          <div class="card space-y-2">
+            <div><label class="lbl">大会名</label><input class="field select-text" id="miCompetition" list="dlCompetitions" placeholder="リストから選ぶか入力"></div>
+            <div class="grid grid-cols-2 gap-2">
+              <div><label class="lbl">日付</label><input type="date" class="field" id="miDate"></div>
+              <div><label class="lbl">会場名</label><input class="field select-text" id="miVenue" list="dlVenues" placeholder="リストから選ぶか入力"></div>
+            </div>
+            <div><label class="lbl">対戦相手</label><input class="field select-text" id="miOpponent" list="dlOpponents" placeholder="リストから選ぶか入力"></div>
+            <div class="flex items-center gap-2 text-[10px] text-slate-500 min-h-[16px]" id="miEmblem"></div>
+            <button class="btn btn-accent w-full" id="btnMatchApply"><i class="fa-solid fa-arrows-rotate"></i>反映（キャプションとデザインに自動入力）</button>
+          </div>
+        </div>
+
+        <div class="post-only">
           <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-pen-nib"></i>キャプション</span>
             <span class="tracking-normal normal-case font-normal text-[10px]"><span id="capCount">0</span>/2200 ・ #<span id="tagCount">0</span>/30</span></div>
           <textarea id="caption" rows="11" class="field !text-[12px] leading-relaxed resize-y select-text" placeholder="キャプションを入力..."></textarea>
@@ -629,7 +653,12 @@
         </div>
 
         <div class="post-only">
-          <div class="sec-title"><i class="fa-solid fa-hashtag"></i>ハッシュタグ簡単追加</div>
+          <div class="sec-title"><i class="fa-solid fa-paragraph"></i>定型文（ホームページ・スポンサー）</div>
+          <div class="space-y-2.5" id="blockList"></div>
+        </div>
+
+        <div class="post-only">
+          <div class="sec-title"><i class="fa-solid fa-hashtag"></i>ハッシュタグ</div>
           <div class="space-y-2.5" id="tagGroups"></div>
         </div>
 
@@ -993,6 +1022,7 @@
   </div>
 </div>
 
+<datalist id="dlCompetitions"></datalist><datalist id="dlVenues"></datalist><datalist id="dlOpponents"></datalist>
 <div id="toasts" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center gap-2 pointer-events-none"></div>
 
 <script>
@@ -1195,7 +1225,7 @@ async function migrateLocalDocs() {
 }
 
 /* shared settings: team, post types & templates, hashtag sets, info fields, mentions */
-const SHARED_KEYS = ['team', 'types', 'tagGroups', 'infoFields', 'mentions', 'assets'];
+const SHARED_KEYS = ['team', 'types', 'tagGroups', 'infoFields', 'mentions', 'assets', 'blocks', 'masters'];
 let settingsT = null, settingsQ = {};
 function queueSharedSetting(k, v) {
   if (!REMOTE || !SHARED_KEYS.includes(k) || !adminToken()) return;
@@ -1208,13 +1238,15 @@ function queueSharedSetting(k, v) {
 }
 async function loadSharedSettings() {
   const st = await api('icGetSettings') || {};
-  const now = { team: S.team, types: TYPES, tagGroups, infoFields, mentions, assets: ASSETS };
+  const now = { team: S.team, types: TYPES, tagGroups, infoFields, mentions, assets: ASSETS, blocks: BLOCKS, masters: MASTERS };
   if (st.team) Object.assign(S.team, st.team);
   if (st.types) TYPES = st.types;
   if (st.tagGroups) tagGroups = st.tagGroups;
   if (st.infoFields) infoFields = withDefaultFields(st.infoFields);
   if (st.mentions) mentions = st.mentions;
   if (st.assets) { ASSETS = st.assets; renderAssetTiles(); }
+  if (st.blocks) BLOCKS = st.blocks;
+  if (st.masters) MASTERS = { ...MASTERS, ...st.masters };
   // the first STAFF to open it shares this browser's settings as the starting point
   const missing = SHARED_KEYS.filter(k => st[k] == null);
   if (missing.length) await api('icSaveSettings', { settings: Object.fromEntries(missing.map(k => [k, now[k]])) }).catch(() => {});
@@ -2809,8 +2841,9 @@ function captionTemplate() {
   const t = curType();
   let txt = fillInfo(t?.templates?.[+$('#capVariant').value || 0]?.text || '');
   if ($('#autoTags').checked) {
-    const gs = ['common', t?.tagGroup].map(id => tagGroups.find(g => g.id === id)).filter(Boolean);
-    const tags = [...new Set(gs.flatMap(groupTags))].slice(0, 30);
+    BLOCKS.filter(b => b.text.trim()).forEach(b => { txt += (txt ? '\n\n' : '') + b.text.trim(); });
+    const common = tagGroups.find(g => g.id === 'common');
+    const tags = common ? [...new Set(groupTags(common))].slice(0, 30) : [];
     if (tags.length) txt += (txt ? '\n\n' : '') + tags.join(' ');
   }
   return txt;
@@ -2957,7 +2990,7 @@ function removeTag(tag) {
   cap.value = cap.value.replace(re, '').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, ''); onCaptionChange();
 }
 function renderTagGroups() {
-  $('#tagGroups').innerHTML = tagGroups.map((g, gi) => `
+  $('#tagGroups').innerHTML = tagGroups.map((g, gi) => g.id !== 'common' ? '' : `
     <div class="card !p-2.5">
       <div class="flex items-center justify-between mb-2">
         <span class="text-[11px] font-bold text-slate-200 flex items-center gap-1.5"><i class="fa-solid ${g.icon} text-accent text-[10px]"></i>${esc(g.label)}</span>
@@ -2973,6 +3006,7 @@ function renderTagGroups() {
   updateTagChipStates();
 }
 function updateTagChipStates() {
+  renderBlockStates();
   const exists = new Set((cap.value.match(/#[^\s#]+/g) || []).map(t => t.toLowerCase()));
   $$('#tagGroups .chip').forEach(c => {
     const on = exists.has(c.dataset.tag.toLowerCase());
@@ -2995,6 +3029,181 @@ $('#tagGroups').addEventListener('change', e => {
   toast('タグセットを保存しました', 'fa-hashtag');
 });
 
+/* ---------------- caption blocks ---------------- */
+/* a block goes above the hashtag line (if the caption ends with one) */
+function insertBlock(text) {
+  const paras = cap.value.replace(/\s+$/, '').split(/\n{2,}/).filter(x => x !== '');
+  const last = (paras[paras.length - 1] || '').trim();
+  const tagsLast = last && last.split(/\s+/).every(t => t.startsWith('#'));
+  paras.splice(tagsLast ? paras.length - 1 : paras.length, 0, text.trim());
+  cap.value = paras.join('\n\n'); onCaptionChange();
+}
+function removeBlock(text) {
+  cap.value = cap.value.replace(text.trim(), '').replace(/\n{3,}/g, '\n\n').trim(); onCaptionChange();
+}
+const blockIn = b => !!b.text.trim() && cap.value.includes(b.text.trim());
+function renderBlocks() {
+  $('#blockList').innerHTML = BLOCKS.map((b, i) => `
+    <div class="card !p-2.5" data-bi="${i}">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-[11px] font-bold text-slate-200 truncate"><i class="fa-solid fa-paragraph text-accent text-[10px] mr-1.5"></i>${esc(b.label)}</span>
+        <span class="flex gap-1 flex-shrink-0">
+          <button class="mini-btn !py-0.5 !text-[10px]" data-b-toggle></button>
+          <button class="mini-btn !py-0.5 !text-[10px]" data-b-edit title="編集"><i class="fa-solid fa-pen"></i></button>
+        </span>
+      </div>
+      <div class="text-[10px] text-slate-500 mt-1 line-clamp-2 whitespace-pre-line">${esc(b.text.split('\n').slice(1, 3).join('\n'))}</div>
+      <div class="hidden mt-2 space-y-1.5" data-b-form>
+        <input class="field !py-1 !text-[11px] select-text" data-b-label value="${esc(b.label)}" placeholder="名前">
+        <textarea class="field !text-[11px] select-text resize-y" rows="8" data-b-text>${esc(b.text)}</textarea>
+        <div class="flex justify-between">
+          <button class="text-[10px] text-slate-500 hover:text-hot" data-b-del><i class="fa-regular fa-trash-can mr-1"></i>この定型文を削除</button>
+          <button class="mini-btn" data-b-save><i class="fa-solid fa-floppy-disk mr-1"></i>保存</button>
+        </div>
+      </div>
+    </div>`).join('') +
+    `<div class="flex justify-between"><button class="text-[10px] text-slate-500 hover:text-white" id="bAdd"><i class="fa-solid fa-plus mr-1"></i>定型文を追加</button>
+     <button class="text-[10px] text-slate-500 hover:text-white" id="bAll"><i class="fa-solid fa-plus mr-1"></i>全部入れる</button></div>`;
+  renderBlockStates();
+}
+function renderBlockStates() {
+  $$('#blockList [data-bi]').forEach(c => {
+    const b = BLOCKS[+c.dataset.bi], on = b && blockIn(b), btn = c.querySelector('[data-b-toggle]');
+    if (!b || !btn) return;
+    btn.innerHTML = on ? '<i class="fa-solid fa-check mr-0.5"></i>入っています' : '<i class="fa-solid fa-plus mr-0.5"></i>入れる';
+    btn.classList.toggle('!text-accent', on);
+  });
+}
+const saveBlocks = () => { store.set('blocks', BLOCKS); renderBlocks(); };
+$('#blockList').addEventListener('click', e => {
+  if (e.target.closest('#bAdd')) { BLOCKS.push({ id: uid(), label: '新しい定型文', text: '◎' }); saveBlocks(); $(`#blockList [data-bi="${BLOCKS.length - 1}"] [data-b-form]`).classList.remove('hidden'); return; }
+  if (e.target.closest('#bAll')) { BLOCKS.filter(b => !blockIn(b) && b.text.trim()).forEach(b => insertBlock(b.text)); return; }
+  const card = e.target.closest('[data-bi]'); if (!card) return;
+  const i = +card.dataset.bi, b = BLOCKS[i];
+  if (e.target.closest('[data-b-toggle]')) { blockIn(b) ? removeBlock(b.text) : insertBlock(b.text); return; }
+  if (e.target.closest('[data-b-edit]')) { card.querySelector('[data-b-form]').classList.toggle('hidden'); return; }
+  if (e.target.closest('[data-b-save]')) {
+    const was = b.text.trim(), label = card.querySelector('[data-b-label]').value.trim() || b.label, text = card.querySelector('[data-b-text]').value.replace(/\s+$/, '');
+    // the caption keeps up: an inserted block is replaced by the new text
+    if (was && cap.value.includes(was)) { cap.value = cap.value.replace(was, text.trim()); onCaptionChange(); }
+    Object.assign(b, { label, text }); saveBlocks(); toast('定型文を保存しました（STAFF全員で共有）', 'fa-floppy-disk'); return;
+  }
+  if (e.target.closest('[data-b-del]')) { if (confirm(`定型文「${b.label}」を削除しますか？`)) { BLOCKS.splice(i, 1); saveBlocks(); } }
+});
+
+/* ---------------- match info (right panel) ---------------- */
+const infoDateToISO = v => { const m = String(v || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : ''; };
+const isoToInfoDate = v => { const [y, m, d] = String(v || '').split('-'); return y && m && d ? `${y}.${+m}.${+d}` : ''; };
+const MI = { miCompetition: 'competition', miVenue: 'venue', miOpponent: 'opponent' };
+const opponentByName = name => MASTERS.opponents.find(o => o.name.trim() === String(name || '').trim());
+function fillMatchInfo() {
+  for (const [id, k] of Object.entries(MI)) if (document.activeElement !== $('#' + id)) $('#' + id).value = S.info[k] ?? '';
+  if (document.activeElement !== $('#miDate')) $('#miDate').value = infoDateToISO(S.info.date);
+  showOpponentEmblem();
+}
+function showOpponentEmblem() {
+  const o = opponentByName(S.info.opponent), a = o && assetById(o.assetId);
+  $('#miEmblem').innerHTML = a ? `<img src="${esc(a.url)}" class="w-5 h-5 object-contain">エンブレム「${esc(a.name)}」も相手エンブレムの枠に入ります`
+    : o ? '<i class="fa-regular fa-circle"></i>この対戦相手にはエンブレムが未登録です' : '';
+}
+function setInfo(k, v) {
+  S.info[k] = v; store.set('info', S.info);
+  if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
+  const el = $(`#infoFields [data-info="${k}"]`); if (el && document.activeElement !== el) el.value = v;
+  updatePreviewMeta();
+}
+for (const [id, k] of Object.entries(MI)) $('#' + id).addEventListener('input', e => { setInfo(k, e.target.value); if (k === 'opponent') showOpponentEmblem(); });
+$('#miDate').addEventListener('change', e => setInfo('date', isoToInfoDate(e.target.value)));
+/* the opponent's registered emblem goes into the opponent emblem frame */
+async function placeOpponentEmblem() {
+  const o = opponentByName(S.info.opponent), a = o && assetById(o.assetId);
+  if (!a) return false;
+  const slots = canvas.getObjects().filter(x => x.role === 'slot' && slotKindOf(x) === 'emblem');
+  const slot = slots.find(x => x.slotId === 'away') || slots.find(x => x.slotId !== 'home' && !x.filled);
+  if (!slot) return false;
+  await fillSlot(slot, a.url, a.name);
+  return true;
+}
+$('#btnMatchApply').addEventListener('click', async () => {
+  await reapplyInfo({ quiet: true });
+  const emb = await placeOpponentEmblem();
+  toast(emb ? 'キャプション・デザイン・相手エンブレムに反映しました' : 'キャプションとデザインに反映しました', 'fa-arrows-rotate');
+});
+function renderDatalists() {
+  const opts = list => list.map(x => `<option value="${esc(x.name)}"></option>`).join('');
+  $('#dlCompetitions').innerHTML = opts(MASTERS.competitions);
+  $('#dlVenues').innerHTML = opts(MASTERS.venues);
+  $('#dlOpponents').innerHTML = opts(MASTERS.opponents);
+}
+
+/* ---------------- home: competitions, venues, opponents ---------------- */
+const MASTER_KINDS = [['competitions', '大会名', 'fa-trophy'], ['venues', '会場名', 'fa-location-dot'], ['opponents', '対戦相手', 'fa-shield']];
+async function mutateMasters(fn) {
+  if (REMOTE) { const st = await api('icGetSettings').catch(() => null); if (st?.masters) MASTERS = { ...MASTERS, ...st.masters }; if (st?.assets) ASSETS = st.assets; }
+  fn(MASTERS);
+  store.set('masters', MASTERS);
+  renderDatalists(); showOpponentEmblem();
+}
+async function renderMasters(refresh) {
+  if (refresh && REMOTE) { const st = await api('icGetSettings').catch(() => null); if (st?.masters) MASTERS = { ...MASTERS, ...st.masters }; if (st?.assets) ASSETS = st.assets; }
+  renderDatalists();
+  const emblems = ASSETS.filter(a => a.kind === 'emblem');
+  $('#masterLists').innerHTML = MASTER_KINDS.map(([kind, label, icon]) => `
+    <div class="bg-panel border border-line rounded-2xl p-4" data-mk="${kind}">
+      <div class="sec-title"><i class="fa-solid ${icon}"></i>${label}（${MASTERS[kind].length}）</div>
+      <div class="flex gap-1.5 mb-3"><input class="field select-text" data-m-new placeholder="${label}を入力"><button class="btn !px-2.5 flex-shrink-0" data-m-add><i class="fa-solid fa-plus"></i>追加</button></div>
+      <div class="space-y-1.5">${MASTERS[kind].map(x => {
+        const a = kind === 'opponents' && assetById(x.assetId);
+        return `<div class="rounded-lg bg-ink/60 border border-line/60 p-2 space-y-1.5" data-mid="${x.id}">
+          <div class="flex items-center gap-1.5">
+            ${kind === 'opponents' ? `<div class="w-8 h-8 rounded checker flex items-center justify-center flex-shrink-0">${a ? `<img src="${esc(a.url)}" class="max-w-[90%] max-h-[90%] object-contain">` : '<i class="fa-regular fa-circle text-slate-600 text-xs"></i>'}</div>` : ''}
+            <input class="field !py-1 !text-[12px] select-text" data-m-name value="${esc(x.name)}">
+            <button class="text-slate-600 hover:text-hot px-1" data-m-del title="削除"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+          ${kind === 'opponents' ? `<div class="flex items-center gap-1.5">
+            <select class="field !py-1 !text-[11px]" data-m-asset><option value="">エンブレムなし</option>${emblems.map(e => `<option value="${e.id}" ${e.id === x.assetId ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
+            <label class="mini-btn cursor-pointer flex-shrink-0" title="画像を選んでエンブレムを登録"><i class="fa-solid fa-upload"></i><input type="file" accept="image/*" class="hidden" data-m-upload></label>
+          </div>` : ''}
+        </div>`;
+      }).join('') || '<p class="text-[11px] text-slate-500">まだ登録がありません</p>'}</div>
+    </div>`).join('');
+}
+$('#masterLists').addEventListener('click', async e => {
+  const box = e.target.closest('[data-mk]'); if (!box) return;
+  const kind = box.dataset.mk;
+  if (e.target.closest('[data-m-add]')) {
+    const inp = box.querySelector('[data-m-new]'), name = inp.value.trim();
+    if (!name) return toast('名前を入力してください', 'fa-circle-info', 'text-sky');
+    await mutateMasters(m => { if (!m[kind].some(x => x.name === name)) m[kind].push({ id: uid(), name, ...(kind === 'opponents' ? { assetId: '' } : {}) }); });
+    renderMasters(); return;
+  }
+  const row = e.target.closest('[data-mid]');
+  if (row && e.target.closest('[data-m-del]')) {
+    const x = MASTERS[kind].find(y => y.id === row.dataset.mid);
+    if (!x || !confirm(`「${x.name}」を削除しますか？`)) return;
+    await mutateMasters(m => { m[kind] = m[kind].filter(y => y.id !== x.id); });
+    renderMasters();
+  }
+});
+$('#masterLists').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-m-new]')) e.target.closest('[data-mk]').querySelector('[data-m-add]').click(); });
+$('#masterLists').addEventListener('change', async e => {
+  const box = e.target.closest('[data-mk]'), row = e.target.closest('[data-mid]'); if (!box || !row) return;
+  const kind = box.dataset.mk, id = row.dataset.mid;
+  if (e.target.matches('[data-m-name]')) { const name = e.target.value.trim(); if (name) await mutateMasters(m => { const x = m[kind].find(y => y.id === id); if (x) x.name = name; }); }
+  if (e.target.matches('[data-m-asset]')) await mutateMasters(m => { const x = m[kind].find(y => y.id === id); if (x) x.assetId = e.target.value; });
+  if (e.target.matches('[data-m-upload]')) {
+    const f = e.target.files[0]; if (!f) return;
+    const x = MASTERS[kind].find(y => y.id === id);
+    try {
+      const data = await assetDataURL(f), url = REMOTE ? await uploadImage(data) : data, asset = { id: uid(), name: x?.name || f.name.replace(/\.[^.]+$/, ''), kind: 'emblem', url };
+      await mutateAssets(list => list.push(asset));
+      await mutateMasters(m => { const y = m[kind].find(z => z.id === id); if (y) y.assetId = asset.id; });
+      renderAssetTiles(); toast('エンブレムを登録して紐づけました', 'fa-shield-halved');
+    } catch (err) { toast('登録できませんでした：' + err.message, 'fa-triangle-exclamation', 'text-hot', 4000); }
+  }
+  renderMasters();
+});
+
 const EMOJIS = ['🔥', '⚽️', '🏀', '⚾️', '🏐', '🏆', '💪', '📣', '🗓', '⏰', '📍', '✨', '🙏', '👏', '🎉', '🤝'];
 $('#emojiBar').innerHTML = EMOJIS.map(e => `<button class="w-7 h-7 rounded-md hover:bg-white/10 text-sm" data-emo="${e}">${e}</button>`).join('');
 $('#emojiBar').addEventListener('click', e => { const b = e.target.closest('[data-emo]'); if (b) insertAtCursor(b.dataset.emo); });
@@ -3009,8 +3218,9 @@ function renderInfoFields() {
       ${f.key === 'scorers'
         ? `<textarea class="field select-text resize-y leading-relaxed" rows="6" data-info="scorers" placeholder="1行に1人ずつ（例：Raise Nakagawa 1'）&#10;カンマ区切りでもOK">${esc(scorerLines(S.info.scorers))}</textarea>
            <div class="text-[10px] text-slate-500 mt-1">1行に1人。入力するとデザインにすぐ反映されます（<span data-scorer-count>${splitScorers(S.info.scorers).length}</span>人）</div>`
-        : `<input class="field select-text" data-info="${f.key}" value="${esc(S.info[f.key] ?? '')}">`}
+        : `<input class="field select-text" data-info="${f.key}" ${{ competition: 'list="dlCompetitions"', venue: 'list="dlVenues"', opponent: 'list="dlOpponents"' }[f.key] || ''} value="${esc(S.info[f.key] ?? '')}">`}
     </div>`).join('');
+  fillMatchInfo();
   $('#placeholderChips').innerHTML = placeholderList().map(p => `<span class="chip" data-ph="${esc(p.label)}" title="選択中のテキストに挿入">{${esc(p.label)}}</span>`).join('');
 }
 const fillInfoInputs = renderInfoFields;
@@ -3021,6 +3231,7 @@ $('#infoFields').addEventListener('input', e => {
   const k = e.target.dataset.info; if (!k) return;
   S.info[k] = e.target.value; store.set('info', S.info);
   if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
+  if (k in { competition: 1, venue: 1, opponent: 1, date: 1 }) fillMatchInfo();
   if (k === 'scorers') { const c = $('#infoFields [data-scorer-count]'); if (c) c.textContent = splitScorers(e.target.value).length; clearTimeout(scorerT); scorerT = setTimeout(refreshScorers, 300); }
   updatePreviewMeta();
 });
@@ -3055,7 +3266,8 @@ $('#placeholderChips').addEventListener('click', e => {
     if (CUR.kind === 'post') { t.tpl = token; t.set('text', fillInfo(token)); canvas.requestRenderAll(); }
   }
 });
-$('#btnReapply').addEventListener('click', async () => {
+$('#btnReapply').addEventListener('click', () => reapplyInfo());
+async function reapplyInfo({ quiet = false } = {}) {
   const key = S.lastPreset;
   if (key && PRESETS[key]) {
     if (!S.dirty || confirm(`表示中のスライドを「${presetName(key)}」で作り直して、投稿情報を反映しますか？（写真は保持）\n\n「キャンセル」なら、差し込み項目の文字だけを更新します。`)) {
@@ -3064,12 +3276,26 @@ $('#btnReapply').addEventListener('click', async () => {
   }
   const n = fillTplTexts() + (refreshScorers() ? 1 : 0);
   if (n) { markDirty({}); saveHistory(); }
-  if (!key && !n) return toast('このスライドには差し込み項目（{ }）のある文字がありません', 'fa-circle-info', 'text-sky', 3500);
+  if (!key && !n && !quiet) return toast('このスライドには差し込み項目（{ }）のある文字がありません', 'fa-circle-info', 'text-sky', 3500);
   if (CUR.kind === 'post') insertTemplate(true);
-  toast('投稿情報を反映しました', 'fa-arrows-rotate');
-});
+  if (!quiet) toast('投稿情報を反映しました', 'fa-arrows-rotate');
+}
 
 /* ---------------- mentions ---------------- */
+/* caption blocks (shared): homepage, sponsors, vehicle sponsors… inserted above the hashtags */
+const BLOCKS_DEFAULT = [
+  { id: 'hp', label: 'ホームページ', text: '◎ホームページ\nhttps://craques2008.fc2.page/' },
+  { id: 'sponsor', label: 'スポンサー様', text: '◎スポンサー様\n' + ['株式会社スルガ電業', '株式会社A・C FACTORY', 'おあしす接骨院', 'LIEN FORT INC.株式会社', '特定非営利活動法人にじのかけ橋', '株式会社ジェイトラスト', 'セブンイレブン伊豆修善寺加殿店', 'THE UGOKI PARK', '株式会社オリジナル', 'Tech Branch', '佐野機工', '佐野歯科クリニック', '三幸電気', '三島ブックセンター', '美幸工業', 'グーニーズ合同会社', '(株)DELTARING', 'BUILD UP', 'ダイビングショップ ケイズマリン', '髙木塗装', '新笑人', '田島興業'].map(n => `《${n}》`).join('\n') },
+  { id: 'vehicle', label: '車両スポンサー様', text: '◎車両スポンサー様\n' + ['沼津ヤナセ・ホールディングス株式会社', '株式会社ステック', '炭火処　菊乃鶏', '株式会社宮岡工業'].map(n => `《${n}》`).join('\n') },
+];
+let BLOCKS = store.get('blocks', null) || JSON.parse(JSON.stringify(BLOCKS_DEFAULT));
+/* competitions, venues and opponents (shared); an opponent may carry an emblem from the registry */
+const MASTERS_DEFAULT = {
+  competitions: [{ id: 'c1', name: 'JFA 第13回全日本U-18フットサル選手権大会 静岡県大会 1次ラウンド' }],
+  venues: [{ id: 'v1', name: '浜松アリーナ' }],
+  opponents: [{ id: 'o1', name: 'F.A.N.G.snarl U-18', assetId: '' }],
+};
+let MASTERS = { ...JSON.parse(JSON.stringify(MASTERS_DEFAULT)), ...store.get('masters', {}) };
 /* registered emblems & logos (shared): { id, name, kind: 'emblem' | 'logo', url } */
 let ASSETS = store.get('assets', []);
 const ASSET_KINDS = [['emblem', 'エンブレム'], ['logo', 'ロゴ']];
@@ -4140,7 +4366,8 @@ function showHomeTab(tab) {
   $('#homePosts').classList.toggle('hidden', tab !== 'posts');
   $('#homePresets').classList.toggle('hidden', tab !== 'presets');
   $('#homeAssets').classList.toggle('hidden', tab !== 'assets');
-  tab === 'presets' ? renderPresetList() : tab === 'assets' ? renderAssetList(true) : renderHome();
+  $('#homeMasters').classList.toggle('hidden', tab !== 'masters');
+  tab === 'presets' ? renderPresetList() : tab === 'assets' ? renderAssetList(true) : tab === 'masters' ? renderMasters(true) : renderHome();
 }
 $('#homeTabs').addEventListener('click', e => { const b = e.target.closest('[data-home]'); if (b) location.hash = b.dataset.home === 'posts' ? '' : '#/' + b.dataset.home; });
 async function renderPresetList() {
@@ -4371,7 +4598,7 @@ async function route() {
   if (m) {
     const kind = m[1], id = m[2];
     if (CUR.post?.id !== id || CUR.kind !== kind) { if (CUR.post) await savePostNow(); await openDoc(kind, id); }
-  } else await closePost(location.hash === '#/presets' ? 'presets' : location.hash === '#/assets' ? 'assets' : 'posts');
+  } else await closePost({ '#/presets': 'presets', '#/assets': 'assets', '#/masters': 'masters' }[location.hash] || 'posts');
 }
 window.addEventListener('hashchange', route);
 $('#btnBack').addEventListener('click', () => { location.hash = CUR.kind === 'preset' ? '#/presets' : ''; });
@@ -4426,7 +4653,7 @@ document.addEventListener('keydown', e => {
   bindTeam();
   await loadCustomPresets();
   renderTypeSelects(); renderInfoFields();
-  renderPresetCards(); renderBgPane(); renderTagGroups(); renderMentions(); renderGallery(); renderAssetTiles(); renderQuickTools();
+  renderPresetCards(); renderBgPane(); renderTagGroups(); renderMentions(); renderGallery(); renderAssetTiles(); renderBlocks(); renderDatalists(); renderQuickTools();
   renderIgChip(); updatePreviewMeta(); loadMakeState().then(renderIgChip);
   renderVariants(); syncObjBar();
   initFolds(); applyLayout(false);
