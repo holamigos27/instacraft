@@ -344,6 +344,9 @@
       <button class="icon-btn !w-7 !h-7" data-ob="al:top" title="上揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 3h16"/><rect x="5" y="5" width="3.5" height="11" rx="1"/><rect x="11.5" y="5" width="3.5" height="7" rx="1"/></svg></button>
       <button class="icon-btn !w-7 !h-7" data-ob="al:cy" title="上下中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 10h16"/><rect x="5" y="4" width="3.5" height="12" rx="1"/><rect x="11.5" y="6" width="3.5" height="8" rx="1"/></svg></button>
       <button class="icon-btn !w-7 !h-7" data-ob="al:bottom" title="下揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 17h16"/><rect x="5" y="4" width="3.5" height="11" rx="1"/><rect x="11.5" y="8" width="3.5" height="7" rx="1"/></svg></button>
+      <span class="w-px h-5 bg-line mx-0.5 flex-shrink-0"></span>
+      <button class="icon-btn !w-7 !h-7" data-ob="dist:h" title="左右に均等配置（3つ以上選択）"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 3v14M18 3v14"/><rect x="4.5" y="6" width="3" height="8" rx="1"/><rect x="12.5" y="6" width="3" height="8" rx="1"/><rect x="8.5" y="6" width="3" height="8" rx="1"/></svg></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="dist:v" title="上下に均等配置（3つ以上選択）"><svg class="al-ico" viewBox="0 0 20 20"><path d="M3 2h14M3 18h14"/><rect x="6" y="4.5" width="8" height="3" rx="1"/><rect x="6" y="12.5" width="8" height="3" rx="1"/><rect x="6" y="8.5" width="8" height="3" rx="1"/></svg></button>
       <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
       <button class="icon-btn !w-7 !h-7" data-ob="flipX" title="左右反転"><i class="fa-solid fa-left-right"></i></button>
       <button class="icon-btn !w-7 !h-7" data-ob="flipY" title="上下反転"><i class="fa-solid fa-up-down"></i></button>
@@ -1587,24 +1590,51 @@ function onSel(e) {
 }
 
 /* ---------------- snapping guides ---------------- */
-const GUIDE = { v: false, h: false };
+/* smart guides (like PowerPoint): while dragging, the object's edges and centre snap to the
+   edges and centres of the other objects and of the design; the matching lines are drawn */
+const SNAP = { lines: [] };
+function snapTargets(moving) {
+  const rects = [{ left: 0, top: 0, width: S.W, height: S.H, design: true }];
+  canvas.getObjects().forEach(x => {
+    if (moving.includes(x) || x.role === 'bg' || x.visible === false || x.evented === false || x.fullBleed || !(x.opacity > 0)) return;
+    x.setCoords(); rects.push(x.getBoundingRect(true, true));
+  });
+  return rects;
+}
 canvas.on('object:moving', e => {
-  const o = e.target, th = 12 / S.zoom * 0.5 + 4;
-  GUIDE.v = GUIDE.h = false;
-  let c = o.getCenterPoint();
-  if (Math.abs(c.x - S.W / 2) < th) { o.setPositionByOrigin(new fabric.Point(S.W / 2, c.y), 'center', 'center'); GUIDE.v = true; }
-  c = o.getCenterPoint();
-  if (Math.abs(c.y - S.H / 2) < th) { o.setPositionByOrigin(new fabric.Point(c.x, S.H / 2), 'center', 'center'); GUIDE.h = true; }
+  const o = e.target, th = 7 / S.zoom; // 7 screen px
+  SNAP.lines = [];
+  if (o.locked) return;
+  const moving = o.type === 'activeSelection' ? o.getObjects() : [o];
+  const targets = snapTargets(moving);
+  o.setCoords();
+  let b = o.getBoundingRect(true, true);
+  const pts = (r, axis) => axis === 'x' ? [r.left, r.left + r.width / 2, r.left + r.width] : [r.top, r.top + r.height / 2, r.top + r.height];
+  // the smallest move that lines something up, per axis
+  const best = axis => {
+    let d = null;
+    targets.forEach(r => pts(r, axis).forEach(t => pts(b, axis).forEach(v => { const dd = t - v; if (Math.abs(dd) < th && (d === null || Math.abs(dd) < Math.abs(d))) d = dd; })));
+    return d;
+  };
+  const dx = best('x'), dy = best('y');
+  if (dx !== null || dy !== null) { o.set({ left: o.left + (dx || 0), top: o.top + (dy || 0) }); o.setCoords(); b = o.getBoundingRect(true, true); }
+  // every alignment that now holds gets a line, spanning both objects
+  targets.forEach(r => {
+    pts(r, 'x').forEach(t => { if (dx !== null && pts(b, 'x').some(v => Math.abs(t - v) < 0.5)) SNAP.lines.push(r.design ? { x: t, a: 0, b: S.H } : { x: t, a: Math.min(r.top, b.top), b: Math.max(r.top + r.height, b.top + b.height) }); });
+    pts(r, 'y').forEach(t => { if (dy !== null && pts(b, 'y').some(v => Math.abs(t - v) < 0.5)) SNAP.lines.push(r.design ? { y: t, a: 0, b: S.W } : { y: t, a: Math.min(r.left, b.left), b: Math.max(r.left + r.width, b.left + b.width) }); });
+  });
 });
-canvas.on('mouse:up', () => { if (GUIDE.v || GUIDE.h) { GUIDE.v = GUIDE.h = false; canvas.requestRenderAll(); } });
+canvas.on('mouse:up', () => { if (SNAP.lines.length) { SNAP.lines = []; canvas.requestRenderAll(); } });
 canvas.on('after:render', () => {
   if (S.exporting) return;
-  if (GUIDE.v || GUIDE.h) {
+  if (SNAP.lines.length) {
     const ctx = canvas.contextContainer, z = S.zoom, ox = S.offX || 0, oy = S.offY || 0;
-    ctx.save(); ctx.strokeStyle = '#ff3bd4'; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
+    ctx.save(); ctx.strokeStyle = '#ff3bd4'; ctx.lineWidth = 1;
     ctx.beginPath();
-    if (GUIDE.v) { ctx.moveTo(ox + S.W / 2 * z, oy); ctx.lineTo(ox + S.W / 2 * z, oy + S.H * z); }
-    if (GUIDE.h) { ctx.moveTo(ox, oy + S.H / 2 * z); ctx.lineTo(ox + S.W * z, oy + S.H / 2 * z); }
+    SNAP.lines.forEach(l => {
+      if ('x' in l) { const X = Math.round(ox + l.x * z) + 0.5; ctx.moveTo(X, oy + l.a * z); ctx.lineTo(X, oy + l.b * z); }
+      else { const Y = Math.round(oy + l.y * z) + 0.5; ctx.moveTo(ox + l.a * z, Y); ctx.lineTo(ox + l.b * z, Y); }
+    });
     ctx.stroke(); ctx.restore();
   }
   if (PV.open) { clearTimeout(PV.t); PV.t = setTimeout(pvRefreshCurrent, 350); }
@@ -2571,11 +2601,31 @@ function alignActive(v) {
   }
   canvas.requestRenderAll(); markDirty(o); saveHistory();
 }
+/* equal gaps between 3+ selected objects; the outermost two stay where they are */
+function distributeActive(axis) {
+  const o = canvas.getActiveObject();
+  if (!o || o.type !== 'activeSelection' || o.size() < 3) return toast('均等配置は、3つ以上をまとめて選択してから使います（Shift+クリックかドラッグで囲む）', 'fa-circle-info', 'text-sky', 4000);
+  const objs = o.getObjects();
+  canvas.discardActiveObject();
+  const h = axis === 'h', pos = r => h ? r.left : r.top, len = r => h ? r.width : r.height;
+  const items = objs.map(x => { x.setCoords(); return { x, r: x.getBoundingRect(true, true) }; }).sort((p, q) => pos(p.r) - pos(q.r));
+  const first = items[0].r, last = items[items.length - 1].r;
+  const gap = (pos(last) + len(last) - pos(first) - items.reduce((n, it) => n + len(it.r), 0)) / (items.length - 1);
+  let at = pos(first);
+  items.forEach(it => {
+    const d = at - pos(it.r);
+    if (!it.x.locked) { it.x.set(h ? { left: it.x.left + d } : { top: it.x.top + d }); it.x.setCoords(); }
+    at += len(it.r) + gap;
+  });
+  canvas.setActiveObject(new fabric.ActiveSelection(objs, { canvas }));
+  canvas.requestRenderAll(); markDirty(objs[0]); saveHistory();
+}
 $('#objBar').addEventListener('click', e => {
   const b = e.target.closest('[data-ob]'); if (!b) return;
   const o = canvas.getActiveObject(); if (!o) return;
   const [a, v] = b.dataset.ob.split(':');
   if (a === 'al') return alignActive(v);
+  if (a === 'dist') return distributeActive(v);
   if (a === 'flipX') o.set('flipX', !o.flipX);
   if (a === 'flipY') o.set('flipY', !o.flipY);
   if (a === 'resetRot') o.rotate(0);
