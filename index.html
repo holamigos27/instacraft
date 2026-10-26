@@ -116,7 +116,7 @@
   .ratio-btn:hover { color: #fff; }
 
   #stage { background-color: #0b0d12; background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,.06) 1px, transparent 0); background-size: 22px 22px; }
-  #canvasWrap { box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08); }
+  #designFrame { position:absolute; box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08); pointer-events:none; }
   #dropOverlay { display:none; }
   #stage.dragging #dropOverlay { display:flex; }
   .craft-frame { position:absolute; inset:0; width:100%; height:100%; border:0; background:#262626; }
@@ -351,12 +351,17 @@
     <section class="absolute inset-0 flex flex-col min-w-0 min-h-0" id="centerCol">
       <div id="stage" class="relative flex-1 min-h-0 overflow-hidden">
         <div id="quickStage" class="absolute inset-0 flex items-center justify-center">
-          <div id="canvasWrap" class="relative"><canvas id="editor"></canvas></div>
+          <div id="designFrame"></div>
+          <div id="canvasWrap" class="absolute inset-0"><canvas id="editor"></canvas></div>
           <div id="dropOverlay" class="absolute inset-3 rounded-2xl border-2 border-dashed border-accent bg-accent/10 items-center justify-center text-accent font-bold pointer-events-none z-10">
             <div class="text-center"><i class="fa-solid fa-image text-4xl mb-2"></i><div>ドロップして画像を配置</div></div>
           </div>
-          <div class="absolute bottom-3 flex items-center gap-2 text-[10px] text-slate-500 bg-ink/80 border border-line rounded-md px-2 py-1" style="left:calc(var(--lpad, 0px) + 12px); transition:left .2s ease">
-            <span id="sizeInfo">1080 × 1350</span><span class="text-line">|</span><span id="zoomInfo">100%</span>
+          <div class="absolute bottom-3 z-10 flex items-center gap-1.5 text-[10px] text-slate-500 bg-ink/80 border border-line rounded-md px-2 py-1" style="left:calc(var(--lpad, 0px) + 12px); transition:left .2s ease">
+            <span id="sizeInfo">1080 × 1350</span><span class="text-line">|</span>
+            <button class="hover:text-white px-1" data-zoom="out" title="縮小表示（Ctrl+ホイールでも）"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+            <span id="zoomInfo" class="tabular-nums">100%</span>
+            <button class="hover:text-white px-1" data-zoom="in" title="拡大表示（画面に合わせる大きさまで）"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+            <button class="hover:text-white px-1" data-zoom="fit" title="画面に合わせる"><i class="fa-solid fa-expand"></i></button>
           </div>
         </div>
         <div id="craftHost" class="absolute inset-0 hidden">
@@ -1186,7 +1191,7 @@ fabric.Text.prototype._setTextStyles = function (ctx, charStyle, forMeasuring) {
   ctx.font = this._getFontDeclaration(charStyle, forMeasuring);
 };
 const canvas = new fabric.Canvas('editor', {
-  preserveObjectStacking: true, backgroundColor: '#000',
+  preserveObjectStacking: true, backgroundColor: '',
   selectionColor: 'rgba(200,255,46,0.08)', selectionBorderColor: '#c8ff2e', selectionLineWidth: 1,
   altSelectionKey: 'altKey', targetFindTolerance: 6
 });
@@ -1261,18 +1266,61 @@ function applyBg(record = false) {
 }
 
 /* ---------------- canvas sizing ---------------- */
+/* the canvas element fills the stage and the design sits in its middle: an image bigger than the
+   design keeps its resize handles reachable around it, while only the design area is painted */
 function fitCanvas() {
   const st = $('#stage');
-  if (!st.clientWidth || !st.clientHeight) return;
-  const z = Math.max(0.05, Math.min((st.clientWidth - 56) / S.W, (st.clientHeight - 56) / S.H));
-  S.zoom = z;
-  canvas.setDimensions({ width: Math.round(S.W * z), height: Math.round(S.H * z) });
-  canvas.setZoom(z);
+  const sw = st.clientWidth, sh = st.clientHeight;
+  if (!sw || !sh) return;
+  S.fitZoom = Math.max(0.05, Math.min((sw - 56) / S.W, (sh - 56) / S.H));
+  const z = S.fitZoom * (S.userZoom || 1);
+  S.zoom = z; S.offX = Math.round((sw - S.W * z) / 2); S.offY = Math.round((sh - S.H * z) / 2);
+  canvas.setDimensions({ width: sw, height: sh });
+  canvas.setViewportTransform([z, 0, 0, z, S.offX, S.offY]);
+  canvas.clipPath = new fabric.Rect({ left: 0, top: 0, width: S.W, height: S.H, absolutePositioned: true });
+  Object.assign($('#designFrame').style, { left: S.offX + 'px', top: S.offY + 'px', width: Math.round(S.W * z) + 'px', height: Math.round(S.H * z) + 'px' });
   canvas.requestRenderAll();
   $('#zoomInfo').textContent = Math.round(z * 100) + '%';
   $('#sizeInfo').textContent = `${S.W} × ${S.H}`;
 }
 new ResizeObserver(() => fitCanvas()).observe($('#stage'));
+/* view zoom (never above "fit", so nothing needs panning): zooming out brings the handles of
+   an image larger than the design out from under the side panels */
+function setViewZoom(u) { S.userZoom = Math.max(0.15, Math.min(1, u)); fitCanvas(); }
+$('#quickStage').addEventListener('click', e => {
+  const b = e.target.closest('[data-zoom]'); if (!b) return;
+  const u = S.userZoom || 1;
+  setViewZoom(b.dataset.zoom === 'fit' ? 1 : b.dataset.zoom === 'in' ? u * 1.25 : u / 1.25);
+});
+$('#stage').addEventListener('wheel', e => {
+  if (!(e.ctrlKey || e.metaKey) || S.tab !== 'quick') return;
+  e.preventDefault();
+  setViewZoom((S.userZoom || 1) * (e.deltaY > 0 ? 1 / 1.1 : 1.1));
+}, { passive: false });
+/* the part of the stage not under an open side panel */
+function visibleStage() {
+  const w = $('#stage').clientWidth, h = $('#stage').clientHeight;
+  const l = LAY.left ? LAY.lw : 0, r = w - (LAY.right ? LAY.rw : 0);
+  return { l, r, t: 0, b: h };
+}
+/* zoom out until the selected object, handles included, is clear of the side panels */
+function zoomToShow(o) {
+  if (!o) return;
+  o.setCoords();
+  const b = o.getBoundingRect(true, true), v = visibleStage(), margin = 36;
+  const cx = S.W / 2, cy = S.H / 2; // the design stays centred in the stage
+  const halfW = Math.max(cx - b.left, b.left + b.width - cx), halfH = Math.max(cy - b.top, b.top + b.height - cy);
+  const stageCx = $('#stage').clientWidth / 2, stageCy = $('#stage').clientHeight / 2;
+  const roomW = Math.min(stageCx - v.l, v.r - stageCx) - margin, roomH = Math.min(stageCy - v.t, v.b - stageCy) - margin;
+  const z = Math.min(roomW / halfW, roomH / halfH);
+  if (z < S.zoom) setViewZoom(z / S.fitZoom);
+}
+function handlesHidden(o) {
+  if (!o || o.type === 'activeSelection') return false;
+  o.setCoords();
+  const v = visibleStage();
+  return Object.values(o.oCoords || {}).some(pt => pt.x < v.l || pt.x > v.r || pt.y < v.t || pt.y > v.b);
+}
 
 function coverImage(img) {
   const s = Math.max(S.W / img.width, S.H / img.height);
@@ -1321,7 +1369,11 @@ async function changeRatioAll(r) {
 
 /* ---------------- history (per slide) ---------------- */
 const HIST = { stack: [], idx: -1, lock: false, t: null };
-const snapshot = () => JSON.stringify({ ratio: S.ratio, bg: S.bg, lastPreset: S.lastPreset, dirty: S.dirty, json: canvas.toJSON(PROPS) });
+function sceneJSON() {
+  const clip = canvas.clipPath; canvas.clipPath = null;
+  try { return canvas.toJSON(PROPS); } finally { canvas.clipPath = clip; }
+}
+const snapshot = () => JSON.stringify({ ratio: S.ratio, bg: S.bg, lastPreset: S.lastPreset, dirty: S.dirty, json: sceneJSON() });
 function saveHistory() {
   if (HIST.lock) return;
   clearTimeout(HIST.t);
@@ -1372,8 +1424,14 @@ function textEdited(o) { if (o && CUR.kind === 'post') o.tpl = hasPlaceholder(o.
 canvas.on('selection:created', onSel);
 canvas.on('selection:updated', onSel);
 canvas.on('selection:cleared', onSel);
+let zoomHinted = false;
 function onSel(e) {
   renderProps(); refreshLayersSoon(); syncObjBar();
+  const o = canvas.getActiveObject();
+  if (o && o.type === 'image' && !zoomHinted && S.tab === 'quick' && handlesHidden(o)) {
+    zoomHinted = true;
+    toast('画像の四隅が隠れています。左下の − か Ctrl+ホイールで縮小表示すると、つかんでサイズ変更できます', 'fa-magnifying-glass-minus', 'text-sky', 5000);
+  }
   // picking something on the canvas opens its properties in the left panel
   if (e && e.selected && e.selected.length && !HIST.lock && LAY.left && S.tab === 'quick') showLeftTab('props');
 }
@@ -1392,11 +1450,11 @@ canvas.on('mouse:up', () => { if (GUIDE.v || GUIDE.h) { GUIDE.v = GUIDE.h = fals
 canvas.on('after:render', () => {
   if (S.exporting) return;
   if (GUIDE.v || GUIDE.h) {
-    const ctx = canvas.contextContainer, z = S.zoom;
+    const ctx = canvas.contextContainer, z = S.zoom, ox = S.offX || 0, oy = S.offY || 0;
     ctx.save(); ctx.strokeStyle = '#ff3bd4'; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
     ctx.beginPath();
-    if (GUIDE.v) { ctx.moveTo(S.W / 2 * z, 0); ctx.lineTo(S.W / 2 * z, S.H * z); }
-    if (GUIDE.h) { ctx.moveTo(0, S.H / 2 * z); ctx.lineTo(S.W * z, S.H / 2 * z); }
+    if (GUIDE.v) { ctx.moveTo(ox + S.W / 2 * z, oy); ctx.lineTo(ox + S.W / 2 * z, oy + S.H * z); }
+    if (GUIDE.h) { ctx.moveTo(ox, oy + S.H / 2 * z); ctx.lineTo(ox + S.W * z, oy + S.H / 2 * z); }
     ctx.stroke(); ctx.restore();
   }
   if (PV.open) { clearTimeout(PV.t); PV.t = setTimeout(pvRefreshCurrent, 350); }
@@ -1533,8 +1591,12 @@ const PRESETS = {
       const y = H * 0.845;
       o.push(...emblemSlot(W * 0.78, y, 74 * k, 'home', 'エンブレム'));
       o.push(...emblemSlot(W * 0.22, y, 74 * k, 'away', '相手エンブレム'));
-      o.push(T(`${i.scoreThem} - ${i.scoreUs}`, { left: W / 2, top: y + 4 * k, width: 460, fontFamily: 'Anton', fontWeight: 400, fontSize: 132 * k, charSpacing: 40, name: 'スコア' }));
-      o.push(...scorerTexts(ctx, String(i.scorers || '').split(/\s*[,、，\/／\n]\s*/).filter(Boolean)));
+      const score = `${i.scoreThem} - ${i.scoreUs}`, sfs = 132 * k;
+      o.push(T(score, { left: W / 2, top: y + 4 * k, width: 460, fontFamily: 'Anton', fontWeight: 400, fontSize: sfs, charSpacing: 40, name: 'スコア' }));
+      // the scorers start under the own team's score (the right number)
+      const measure = str => new fabric.Text(str, { fontFamily: 'Anton', fontSize: sfs, charSpacing: 40 }).width;
+      const xUs = W / 2 - measure(score) / 2 + measure(`${i.scoreThem} - `);
+      o.push(...scorerTexts(ctx, String(i.scorers || '').split(/\s*[,、，\/／\n]\s*/).filter(Boolean), { x: xUs, top: y + 4 * k + sfs * 0.4 + 10 * k }));
       return o.concat(logoSlot(ctx));
     }
   },
@@ -1638,21 +1700,21 @@ function photoFrame({ W, H, t, i, k }, title, size = 138) {
   o.push(T(title, { left: cx, top: cy, width: tw + 40, angle: TILT, fontFamily: 'Anton', fontWeight: 400, fontSize: fs, lineHeight: 1, charSpacing: 10, shadow: sh('rgba(0,0,0,0.4)', 18, 0, 6), name: title }));
   return o;
 }
-/* goal scorers: one column up to 4, then up to 3 columns; the font shrinks to fit (about 15 names) */
-function scorerTexts({ W, H, k }, names) {
-  if (!names.length) return [T(' ', { originX: 'left', originY: 'top', left: W * 0.6, top: H * 0.905, width: W * 0.32, textAlign: 'left', fontFamily: 'Oswald', fontWeight: 500, fontSize: 21 * k, name: '得点者' })];
-  const top = H * 0.905, height = H * 0.985 - top, lh = 1.3, base = 21 * k;
+/* goal scorers, from under the own score to the right edge: the layout (1-3 columns) that gives
+   the biggest letters wins, so about 15 names still fit */
+function scorerTexts({ W, H, k }, names, { x, top }) {
+  const right = W * 0.965, bottom = H * 0.99, lh = 1.3, base = 21 * k;
+  const width = right - x, height = bottom - top;
+  if (!names.length) return [T(' ', { originX: 'left', originY: 'top', left: x, top, width, textAlign: 'left', fontFamily: 'Oswald', fontWeight: 500, fontSize: base, name: '得点者' })];
   const ratio = Math.max(...names.map(n => new fabric.Text(n, { fontFamily: 'Oswald', fontWeight: 500, fontSize: 100 }).width / 100));
-  const layout = n => {
-    if (n <= 4) return { cols: 1, left: W * 0.6, width: W * 0.32 };
-    return { cols: Math.min(3, Math.ceil(n / 5)), left: W * 0.08, width: W * 0.84 };
-  };
-  const { cols, left, width } = layout(names.length);
-  const rows = Math.ceil(names.length / cols), colW = width / cols;
-  const size = Math.max(9, Math.min(base, height / (rows * lh), (colW - 12) / ratio));
-  return Array.from({ length: cols }, (_, c) => T(names.slice(c * rows, (c + 1) * rows).join('\n'), {
-    originX: 'left', originY: 'top', left: left + c * colW, top, width: colW - 8, textAlign: 'left',
-    fontFamily: 'Oswald', fontWeight: 500, fontSize: size, lineHeight: lh, name: cols > 1 ? `得点者 ${c + 1}` : '得点者',
+  const best = [1, 2, 3].map(cols => {
+    const rows = Math.ceil(names.length / cols), colW = width / cols;
+    return { cols, rows, colW, size: Math.min(base, height / (rows * lh), (colW - 10) / ratio) };
+  }).sort((p, q) => q.size - p.size || p.cols - q.cols)[0];
+  const size = Math.max(8, best.size);
+  return Array.from({ length: best.cols }, (_, c) => names.slice(c * best.rows, (c + 1) * best.rows)).filter(col => col.length).map((col, c) => T(col.join('\n'), {
+    originX: 'left', originY: 'top', left: x + c * best.colW, top, width: best.colW - 6, textAlign: 'left',
+    fontFamily: 'Oswald', fontWeight: 500, fontSize: size, lineHeight: lh, name: best.cols > 1 ? `得点者 ${c + 1}` : '得点者',
   }));
 }
 /* an empty slot: dashed ring + label; filled by uploading while it is selected (or in order) */
@@ -2202,7 +2264,7 @@ function imagePropsHTML(o) {
       C.range('fx_h', '色相', -1, 1, 0.01, f.h || 0) + C.range('fx_bl', 'ぼかし', 0, 0.6, 0.01, f.bl || 0) + C.range('fx_tint', 'カラー重ね', 0, 0.8, 0.01, f.tint || 0) +
       `<div class="flex gap-3">${C.toggle('fx_gray', 'モノクロ', f.gray)}${C.toggle('fx_sepia', 'セピア', f.sepia)}</div>`) +
     C.sec('fa-crop-simple', '配置',
-      C.btns([['cover', '<i class="fa-solid fa-expand mr-1"></i>全面に敷く'], ['contain', '<i class="fa-solid fa-compress mr-1"></i>全体を表示'], ['fit80', '80%サイズ']]) +
+      C.btns([['cover', '<i class="fa-solid fa-expand mr-1"></i>全面に敷く'], ['contain', '<i class="fa-solid fa-compress mr-1"></i>全体を表示'], ['fit80', '80%サイズ'], ['zoomShow', '<i class="fa-solid fa-magnifying-glass-minus mr-1"></i>四隅が見えるよう縮小表示']]) +
       C.color('fx_tintColor', 'カラー重ねの色', f.tintColor || S.team.primary));
 }
 function slotPropsHTML(o) {
@@ -2309,6 +2371,7 @@ function propAction(act) {
       return;
     }
     case 'cover': coverImage(o); canvas.moveTo(o, 1); break;
+    case 'zoomShow': zoomToShow(o); return;
     case 'contain': { const s = Math.min(S.W / o.width, S.H / o.height); o.set({ scaleX: s, scaleY: s, angle: 0, fullBleed: false }); o.setPositionByOrigin(new fabric.Point(S.W / 2, S.H / 2), 'center', 'center'); break; }
     case 'fit80': { const s = Math.min(S.W * 0.8 / o.width, S.H * 0.8 / o.height); o.set({ scaleX: s, scaleY: s, fullBleed: false }); o.setPositionByOrigin(new fabric.Point(S.W / 2, S.H / 2), 'center', 'center'); break; }
     case 'centerH': { const c = o.getCenterPoint(); o.setPositionByOrigin(new fabric.Point(S.W / 2, c.y), 'center', 'center'); break; }
@@ -3088,7 +3151,7 @@ function renderDataURL(widthPx, format = 'png', quality = 1) {
   S.exporting = true;
   const active = canvas.getActiveObject();
   if (active && active.isEditing) active.exitEditing();
-  const url = canvas.toDataURL({ format, quality, multiplier: widthPx / (S.W * S.zoom) });
+  const url = canvas.toDataURL({ format, quality, multiplier: widthPx / (S.W * S.zoom), left: S.offX, top: S.offY, width: S.W * S.zoom, height: S.H * S.zoom });
   S.exporting = false;
   return url;
 }
