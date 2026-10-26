@@ -1228,7 +1228,7 @@ const PROPS = ['name', 'role', 'fx', 'fullBleed', 'filled', 'locked', 'selectabl
   'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'perPixelTargetFind', 'splitByGrapheme',
   'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind', 'scorerBox'];
 const BADGE_COLORS = ['bg-accent/15 text-accent', 'bg-sky/15 text-sky', 'bg-amber-400/15 text-amber-300', 'bg-violet-400/15 text-violet-300', 'bg-hot/15 text-hot', 'bg-emerald-400/15 text-emerald-300', 'bg-orange-400/15 text-orange-300', 'bg-pink-400/15 text-pink-300'];
-const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇', scorers: "Raise Nakagawa 1', Eito Watanabe 4', Tsukasa Nishikawa 12'" };
+const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇', scorers: "Raise Nakagawa 1'\nEito Watanabe 4'\nTsukasa Nishikawa 12'" };
 /* post-info fields; the user can add their own (key c_…). Labels double as {placeholder} names. */
 const INFO_FIELDS_DEFAULT = [
   { key: 'competition', label: '大会名', wide: true }, { key: 'opponent', label: '対戦相手', wide: true },
@@ -3006,17 +3006,22 @@ function renderInfoFields() {
     <div class="${f.wide ? 'col-span-2' : ''}">
       <label class="lbl flex items-center justify-between gap-1"><span class="truncate">${esc(f.label)} <span class="text-slate-600">{${esc(f.label)}}</span></span>
         ${builtIn.has(f.key) ? '' : `<button class="text-slate-600 hover:text-hot" data-fdel="${f.key}" title="この項目を削除"><i class="fa-solid fa-xmark"></i></button>`}</label>
-      <input class="field select-text" data-info="${f.key}" value="${esc(S.info[f.key] ?? '')}">
+      ${f.key === 'scorers'
+        ? `<textarea class="field select-text resize-y leading-relaxed" rows="6" data-info="scorers" placeholder="1行に1人ずつ（例：Raise Nakagawa 1'）&#10;カンマ区切りでもOK">${esc(scorerLines(S.info.scorers))}</textarea>
+           <div class="text-[10px] text-slate-500 mt-1">1行に1人。入力するとデザインにすぐ反映されます（<span data-scorer-count>${splitScorers(S.info.scorers).length}</span>人）</div>`
+        : `<input class="field select-text" data-info="${f.key}" value="${esc(S.info[f.key] ?? '')}">`}
     </div>`).join('');
   $('#placeholderChips').innerHTML = placeholderList().map(p => `<span class="chip" data-ph="${esc(p.label)}" title="選択中のテキストに挿入">{${esc(p.label)}}</span>`).join('');
 }
 const fillInfoInputs = renderInfoFields;
+/* the scorers box shows one name per line (older entries were comma separated) */
+const scorerLines = v => String(v || '').includes('\n') ? String(v) : splitScorers(v).join('\n');
 let scorerT = null;
 $('#infoFields').addEventListener('input', e => {
   const k = e.target.dataset.info; if (!k) return;
   S.info[k] = e.target.value; store.set('info', S.info);
   if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
-  if (k === 'scorers') { clearTimeout(scorerT); scorerT = setTimeout(refreshScorers, 300); }
+  if (k === 'scorers') { const c = $('#infoFields [data-scorer-count]'); if (c) c.textContent = splitScorers(e.target.value).length; clearTimeout(scorerT); scorerT = setTimeout(refreshScorers, 300); }
   updatePreviewMeta();
 });
 $('#infoFields').addEventListener('click', e => {
