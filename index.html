@@ -387,7 +387,7 @@
             <span id="sizeInfo">1080 × 1350</span><span class="text-line">|</span>
             <button class="hover:text-white px-1" data-zoom="out" title="縮小表示（Ctrl+ホイールでも）"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
             <span id="zoomInfo" class="tabular-nums">100%</span>
-            <button class="hover:text-white px-1" data-zoom="in" title="拡大表示（画面に合わせる大きさまで）"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+            <button class="hover:text-white px-1" data-zoom="in" title="拡大表示（最大400%。拡大中はホイール・Space+ドラッグで移動）"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
             <button class="hover:text-white px-1" data-zoom="fit" title="画面に合わせる"><i class="fa-solid fa-expand"></i></button>
           </div>
         </div>
@@ -1380,7 +1380,11 @@ function fitCanvas() {
   if (!sw || !sh) return;
   S.fitZoom = Math.max(0.05, Math.min((sw - 56) / S.W, (sh - 56) / S.H));
   const z = S.fitZoom * (S.userZoom || 1);
-  S.zoom = z; S.offX = Math.round((sw - S.W * z) / 2); S.offY = Math.round((sh - S.H * z) / 2);
+  // zoomed in, the design can be panned; it never leaves the stage entirely
+  const lim = (d, v) => Math.max(0, (d - v) / 2 + 60);
+  S.panX = Math.max(-lim(S.W * z, sw), Math.min(lim(S.W * z, sw), S.panX || 0));
+  S.panY = Math.max(-lim(S.H * z, sh), Math.min(lim(S.H * z, sh), S.panY || 0));
+  S.zoom = z; S.offX = Math.round((sw - S.W * z) / 2 + S.panX); S.offY = Math.round((sh - S.H * z) / 2 + S.panY);
   canvas.setDimensions({ width: sw, height: sh });
   canvas.setViewportTransform([z, 0, 0, z, S.offX, S.offY]);
   canvas.clipPath = new fabric.Rect({ left: 0, top: 0, width: S.W, height: S.H, absolutePositioned: true });
@@ -1390,19 +1394,59 @@ function fitCanvas() {
   $('#sizeInfo').textContent = `${S.W} × ${S.H}`;
 }
 new ResizeObserver(() => fitCanvas()).observe($('#stage'));
-/* view zoom (never above "fit", so nothing needs panning): zooming out brings the handles of
+/* view zoom (15 %–400 % of the screen size; pan when zoomed in): zooming out brings the handles of
    an image larger than the design out from under the side panels */
-function setViewZoom(u) { S.userZoom = Math.max(0.15, Math.min(1, u)); fitCanvas(); }
+const MAX_VIEW_ZOOM = 4; // 400 %
+/* u is relative to "fit"; `at` (stage px) stays put while zooming, e.g. the mouse pointer */
+function setViewZoom(u, at) {
+  const old = S.zoom, st = $('#stage');
+  S.userZoom = Math.max(0.15, Math.min(MAX_VIEW_ZOOM / S.fitZoom, u));
+  const z = S.fitZoom * S.userZoom;
+  if (z <= S.fitZoom + 1e-6) { S.panX = 0; S.panY = 0; }
+  else {
+    const c = at || { x: st.clientWidth / 2, y: st.clientHeight / 2 };
+    const dx = (c.x - S.offX) / old, dy = (c.y - S.offY) / old; // the design point under c
+    S.panX = c.x - dx * z - (st.clientWidth - S.W * z) / 2;
+    S.panY = c.y - dy * z - (st.clientHeight - S.H * z) / 2;
+  }
+  fitCanvas();
+}
 $('#quickStage').addEventListener('click', e => {
   const b = e.target.closest('[data-zoom]'); if (!b) return;
   const u = S.userZoom || 1;
   setViewZoom(b.dataset.zoom === 'fit' ? 1 : b.dataset.zoom === 'in' ? u * 1.25 : u / 1.25);
 });
+const stagePoint = e => { const r = $('#stage').getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 $('#stage').addEventListener('wheel', e => {
-  if (!(e.ctrlKey || e.metaKey) || S.tab !== 'quick') return;
+  if (S.tab !== 'quick') return;
+  if (e.ctrlKey || e.metaKey) { e.preventDefault(); setViewZoom((S.userZoom || 1) * (e.deltaY > 0 ? 1 / 1.1 : 1.1), stagePoint(e)); return; }
+  // zoomed in: the wheel scrolls the view (Shift = sideways)
+  if (S.zoom <= S.fitZoom + 1e-6) return;
   e.preventDefault();
-  setViewZoom((S.userZoom || 1) * (e.deltaY > 0 ? 1 / 1.1 : 1.1));
+  S.panX = (S.panX || 0) - (e.shiftKey ? e.deltaY : e.deltaX);
+  S.panY = (S.panY || 0) - (e.shiftKey ? 0 : e.deltaY);
+  fitCanvas();
 }, { passive: false });
+/* hold Space (or the middle button) and drag to move the view */
+const VIEW_PAN = { space: false, drag: null };
+document.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || VIEW_PAN.space || S.tab !== 'quick' || !CUR.post) return;
+  const el = document.activeElement;
+  if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(el?.tagName) || canvas.getActiveObject()?.isEditing) return;
+  e.preventDefault(); VIEW_PAN.space = true; $('#stage').style.cursor = 'grab';
+});
+document.addEventListener('keyup', e => { if (e.code === 'Space') { VIEW_PAN.space = false; if (!VIEW_PAN.drag) $('#stage').style.cursor = ''; } });
+$('#stage').addEventListener('pointerdown', e => {
+  if (!(VIEW_PAN.space || e.button === 1)) return;
+  e.preventDefault(); e.stopImmediatePropagation(); // the canvas does not see it
+  VIEW_PAN.drag = { x: e.clientX, y: e.clientY, px: S.panX || 0, py: S.panY || 0 };
+  $('#stage').style.cursor = 'grabbing';
+}, true);
+window.addEventListener('pointermove', e => {
+  const d = VIEW_PAN.drag; if (!d) return;
+  S.panX = d.px + e.clientX - d.x; S.panY = d.py + e.clientY - d.y; fitCanvas();
+});
+window.addEventListener('pointerup', () => { if (!VIEW_PAN.drag) return; VIEW_PAN.drag = null; $('#stage').style.cursor = VIEW_PAN.space ? 'grab' : ''; });
 /* the part of the stage not under an open side panel */
 function visibleStage() {
   const w = $('#stage').clientWidth, h = $('#stage').clientHeight;
@@ -2443,10 +2487,37 @@ const C = {
 };
 const r2 = v => Math.round(v * 100) / 100;
 
+/* width / height in design px, typed in like in Illustrator; the chain keeps the proportions */
+let sizeLock = true;
+const sizeOf = o => ({ w: o.width * o.scaleX, h: o.height * o.scaleY });
+function sizeSecHTML(o) {
+  const { w, h } = sizeOf(o);
+  return C.sec('fa-up-right-and-down-left-from-center', 'サイズ（px）', `
+    <div class="grid grid-cols-[1fr_auto_1fr] items-end gap-1.5">
+      <label class="block"><span class="lbl">幅 W</span><input type="number" min="1" step="1" class="field !py-1 select-text" data-size="w" value="${Math.round(w)}"></label>
+      <button class="icon-btn !w-8 !h-8 mb-px ${sizeLock ? '!text-accent' : ''}" data-act="sizeLock" title="${sizeLock ? '縦横比を固定中（クリックで解除）' : '縦横比を固定する'}"><i class="fa-solid ${sizeLock ? 'fa-link' : 'fa-link-slash'}"></i></button>
+      <label class="block"><span class="lbl">高さ H</span><input type="number" min="1" step="1" class="field !py-1 select-text" data-size="h" value="${Math.round(h)}"></label>
+    </div>
+    <p class="text-[10px] text-slate-500">${sizeLock ? '縦横比を固定して変更します' : '幅と高さを別々に変更します'}（Enter・↑↓キーで反映）</p>`);
+}
+function syncSizeInputs() {
+  const o = canvas.getActiveObject(); if (!o) return;
+  const { w, h } = sizeOf(o);
+  for (const [k, v] of [['w', w], ['h', h]]) { const inp = $(`#props [data-size="${k}"]`); if (inp && document.activeElement !== inp) inp.value = Math.round(v); }
+}
+function applySize(dim, v) {
+  const o = canvas.getActiveObject(); if (!o || !(v > 0)) return;
+  const { w, h } = sizeOf(o);
+  if (sizeLock) { const f = dim === 'w' ? v / w : v / h; o.set({ scaleX: o.scaleX * f, scaleY: o.scaleY * f }); }
+  else if (dim === 'w') o.set('scaleX', v / o.width);
+  else o.set('scaleY', v / o.height);
+  if (o.type === 'image') o.fullBleed = false;
+  o.setCoords(); canvas.requestRenderAll(); markDirty(o); saveHistory(); syncSizeInputs();
+}
 function renderProps() {
   const el = $('#props'), o = canvas.getActiveObject();
   if (!o) { $('#propTitle').textContent = '— 背景・キャンバス'; el.innerHTML = bgPropsHTML(); return; }
-  if (o.type === 'activeSelection') { $('#propTitle').textContent = `— ${o.size()}個を選択中`; el.innerHTML = multiPropsHTML(o); return; }
+  if (o.type === 'activeSelection') { $('#propTitle').textContent = `— ${o.size()}個を選択中`; el.innerHTML = sizeSecHTML(o) + multiPropsHTML(o); return; }
   $('#propTitle').textContent = '— ' + layerName(o);
   let h = '';
   if (o.type === 'textbox') h = textPropsHTML(o);
@@ -2454,9 +2525,10 @@ function renderProps() {
   else if (o.role === 'slot') h = slotPropsHTML(o) + (o.type === 'group' ? '' : shapePropsHTML(o));
   else if (o.type === 'group') h = groupPropsHTML(o);
   else h = shapePropsHTML(o);
-  el.innerHTML = h;
+  el.innerHTML = sizeSecHTML(o) + h;
 }
 function syncPropsLive() { syncObjBar(); }
+canvas.on('object:scaling', syncSizeInputs);
 
 /* ---------------- transform / align bar (top of the canvas) ---------------- */
 function syncObjBar() {
@@ -2467,6 +2539,7 @@ function syncObjBar() {
   if (document.activeElement !== $('#obAngle')) $('#obAngle').value = ang;
   const op = Math.round((o.type === 'activeSelection' ? (o.getObjects()[0]?.opacity ?? 1) : (o.opacity ?? 1)) * 100);
   $('#obOpacity').value = op; $('#obOpacityOut').textContent = op + '%';
+  syncSizeInputs();
 }
 /* one object: against the canvas; several: against the selection's bounds */
 function alignActive(v) {
@@ -2672,6 +2745,7 @@ function propAction(act) {
     case 'replaceFile': pickFile().then(url => url && replaceImage(o, url)); return;
     case 'cover': coverImage(o); canvas.moveTo(o, 1); break;
     case 'zoomShow': zoomToShow(o); return;
+    case 'sizeLock': sizeLock = !sizeLock; renderProps(); return;
     case 'recolorOff': o.fx = Object.assign({}, o.fx); delete o.fx.recolor; applyFx(o); renderProps(); break;
     case 'contain': { const s = Math.min(S.W / o.width, S.H / o.height); o.set({ scaleX: s, scaleY: s, angle: 0, fullBleed: false }); o.setPositionByOrigin(new fabric.Point(S.W / 2, S.H / 2), 'center', 'center'); break; }
     case 'fit80': { const s = Math.min(S.W * 0.8 / o.width, S.H * 0.8 / o.height); o.set({ scaleX: s, scaleY: s, fullBleed: false }); o.setPositionByOrigin(new fabric.Point(S.W / 2, S.H / 2), 'center', 'center'); break; }
@@ -2706,6 +2780,13 @@ propsEl.addEventListener('input', e => {
   const k = e.target.dataset.k; if (!k || e.target.tagName === 'SELECT' || e.target.type === 'checkbox') return;
   setProp(k, e.target.value);
   if (e.target.type === 'range') outLabel(k, e.target.value);
+});
+propsEl.addEventListener('change', e => { if (e.target.matches('[data-size]')) applySize(e.target.dataset.size, +e.target.value); });
+propsEl.addEventListener('keydown', e => {
+  if (!e.target.matches('[data-size]')) return;
+  if (e.key === 'Enter') { e.preventDefault(); applySize(e.target.dataset.size, +e.target.value); }
+  // the arrows step by 1 (Shift: 10) and apply at once
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); const v = Math.max(1, Math.round(+e.target.value) + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1)); e.target.value = v; applySize(e.target.dataset.size, v); }
 });
 propsEl.addEventListener('change', e => {
   if (e.target.matches('[data-asset-pick]')) {
