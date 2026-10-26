@@ -1984,6 +1984,22 @@ function fillTplTexts() {
   return n;
 }
 
+/* built-in designs write the post info straight into their texts; building the design once more
+   with {項目名} in place of every value tells which texts came from which fields, so those texts
+   keep a template (tpl) and follow later edits of the info (score, opponent, date, …) */
+function markInfoTexts(p, objs, k) {
+  const i2 = {}; infoFields.forEach(f => { i2[f.key] = `{${f.label}}`; });
+  let tplObjs;
+  try { const r = p.build({ W: S.W, H: S.H, t: { ...S.team, name: '{チーム名}' }, i: i2, k }); tplObjs = Array.isArray(r) ? r : r.objects; } catch (e) { return; }
+  const texts = list => list.filter(o => o.type === 'textbox' && !o.scorerBox && o.role !== 'placeholder');
+  const real = texts(objs), tpl = texts(tplObjs), used = new Set();
+  real.forEach(o => {
+    const m = tpl.find(x => !used.has(x) && x.name === o.name);
+    if (!m) return;
+    used.add(m);
+    if (hasPlaceholder(m.text) && fillInfo(m.text) === o.text) o.tpl = m.text;
+  });
+}
 async function applyPreset(key, opts = {}) {
   if (key.startsWith('c:')) return applyCustomPreset(key.slice(2), opts);
   const { caption = true, record = true } = opts;
@@ -1998,6 +2014,7 @@ async function applyPreset(key, opts = {}) {
   const k = S.H <= 1080 ? 0.8 : 1;
   const res = p.build({ W: S.W, H: S.H, t: S.team, i: S.info, k });
   const objs = Array.isArray(res) ? res : res.objects;
+  markInfoTexts(p, objs, k);
   kept.forEach(img => { if (img.fullBleed) coverImage(img); canvas.add(img); });
   objs.forEach(o => canvas.add(o));
   if (kept.some(img => img.fullBleed)) removePhotoPlaceholders();
@@ -2985,6 +3002,7 @@ function bindTeam() {
       S.team[key] = key === 'account' ? el.value.replace(/^@/, '').trim() : el.value;
       store.set('team', S.team); renderPresetCards(); renderBgPane(); renderTagGroups(); updatePreviewMeta();
       const tf = $('#infoFields [data-team-name]'); if (key === 'name' && tf && document.activeElement !== tf) tf.value = el.value;
+      if (key === 'name') scheduleInfoTexts();
     });
   });
   const palettes = [
@@ -3344,7 +3362,7 @@ function setInfo(k, v) {
   S.info[k] = v; store.set('info', S.info);
   if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
   const el = $(`#infoFields [data-info="${k}"]`); if (el && document.activeElement !== el) el.value = v;
-  updatePreviewMeta();
+  updatePreviewMeta(); scheduleInfoTexts();
 }
 for (const [id, k] of Object.entries(MI)) $('#' + id).addEventListener('input', e => { setInfo(k, e.target.value); if (k === 'opponent') showOpponentEmblem(); });
 $('#miDate').addEventListener('change', e => setInfo('date', isoToInfoDate(e.target.value)));
@@ -3466,13 +3484,19 @@ function renderInfoFields() {
 const fillInfoInputs = renderInfoFields;
 /* the scorers box shows one name per line (older entries were comma separated) */
 const scorerLines = v => String(v || '').includes('\n') ? String(v) : splitScorers(v).join('\n');
-let scorerT = null;
+let scorerT = null, infoTextT = null;
+/* info edits show up in the design right away (texts that carry a template) */
+function scheduleInfoTexts() {
+  clearTimeout(infoTextT);
+  infoTextT = setTimeout(() => { if (CUR.post && fillTplTexts()) saveHistory(); }, 250);
+}
 $('#infoFields').addEventListener('input', e => {
   if (e.target.matches('[data-team-name]')) { const t = $('#tmName'); t.value = e.target.value; t.dispatchEvent(new Event('input')); return; }
   const k = e.target.dataset.info; if (!k) return;
   S.info[k] = e.target.value; store.set('info', S.info);
   if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
   if (k in { competition: 1, venue: 1, opponent: 1, date: 1 }) fillMatchInfo();
+  if (k !== 'scorers') scheduleInfoTexts();
   if (k === 'scorers') { const c = $('#infoFields [data-scorer-count]'); if (c) c.textContent = splitScorers(e.target.value).length; clearTimeout(scorerT); scorerT = setTimeout(refreshScorers, 300); }
   updatePreviewMeta();
 });
