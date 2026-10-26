@@ -2751,6 +2751,7 @@ function bindTeam() {
     el.addEventListener('input', () => {
       S.team[key] = key === 'account' ? el.value.replace(/^@/, '').trim() : el.value;
       store.set('team', S.team); renderPresetCards(); renderBgPane(); renderTagGroups(); updatePreviewMeta();
+      const tf = $('#infoFields [data-team-name]'); if (key === 'name' && tf && document.activeElement !== tf) tf.value = el.value;
     });
   });
   const palettes = [
@@ -3211,7 +3212,13 @@ $('#emojiBar').addEventListener('click', e => { const b = e.target.closest('[dat
 /* ---------------- post info ---------------- */
 function renderInfoFields() {
   const builtIn = new Set(INFO_FIELDS_DEFAULT.map(f => f.key));
-  $('#infoFields').innerHTML = infoFields.map(f => `
+  // the own team's name sits just above the opponent (it is the shared チーム設定 value)
+  const teamField = `
+    <div class="col-span-2">
+      <label class="lbl flex items-center justify-between gap-1"><span class="truncate">チーム名 <span class="text-slate-600">{チーム名}</span></span><span class="text-[9px] text-slate-600">チーム設定と共通</span></label>
+      <input class="field select-text" data-team-name value="${esc(S.team.name || '')}">
+    </div>`;
+  $('#infoFields').innerHTML = infoFields.map(f => (f.key === 'opponent' ? teamField : '') + `
     <div class="${f.wide ? 'col-span-2' : ''}">
       <label class="lbl flex items-center justify-between gap-1"><span class="truncate">${esc(f.label)} <span class="text-slate-600">{${esc(f.label)}}</span></span>
         ${builtIn.has(f.key) ? '' : `<button class="text-slate-600 hover:text-hot" data-fdel="${f.key}" title="この項目を削除"><i class="fa-solid fa-xmark"></i></button>`}</label>
@@ -3228,6 +3235,7 @@ const fillInfoInputs = renderInfoFields;
 const scorerLines = v => String(v || '').includes('\n') ? String(v) : splitScorers(v).join('\n');
 let scorerT = null;
 $('#infoFields').addEventListener('input', e => {
+  if (e.target.matches('[data-team-name]')) { const t = $('#tmName'); t.value = e.target.value; t.dispatchEvent(new Event('input')); return; }
   const k = e.target.dataset.info; if (!k) return;
   S.info[k] = e.target.value; store.set('info', S.info);
   if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
