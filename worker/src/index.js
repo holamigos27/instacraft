@@ -9,6 +9,11 @@ const MAX_DOC_CHARS = 1_900_000; // D1 keeps rows up to 2 MB
 const MAX_IMAGE_BYTES = 1_950_000;
 const SETTING_NAMES = ['team', 'types', 'tagGroups', 'infoFields', 'mentions', 'assets'];
 const KINDS = new Set(['post', 'preset']);
+const MAKE_HOOK = /^https:\/\/hook\.[a-z0-9-]+\.make\.com\/[A-Za-z0-9_-]+$/;
+async function makeHook(env) {
+  const r = await env.DB.prepare("SELECT value FROM settings WHERE key = '_make'").first();
+  return r ? JSON.parse(r.value) : '';
+}
 
 const enc = new TextEncoder();
 const json = (body, init = {}, cors = {}) =>
@@ -121,7 +126,26 @@ const actions = {
   },
   async icGetSettings(p, env) {
     const { results } = await env.DB.prepare('SELECT key, value FROM settings').all();
-    return Object.fromEntries(results.map(r => [r.key, JSON.parse(r.value)]));
+    // keys starting with "_" are server-side only (the Make webhook)
+    return Object.fromEntries(results.filter(r => !r.key.startsWith('_')).map(r => [r.key, JSON.parse(r.value)]));
+  },
+  /* Instagram posting goes through the team's Make scenario; its webhook URL stays on the server */
+  async icGetMake(p, env) {
+    const url = await makeHook(env);
+    return { configured: !!url, hint: url ? url.replace(/^https:\/\//, '').slice(0, 22) + '…' + url.slice(-4) : '' };
+  },
+  async icSetMake(p, env) {
+    const url = String(p.url || '').trim();
+    if (url && !MAKE_HOOK.test(url)) throw new Error('MakeのWebhook URL（https://hook.○○.make.com/…）を入力してください');
+    if (url) await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('_make', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(JSON.stringify(url)).run();
+    else await env.DB.prepare("DELETE FROM settings WHERE key = '_make'").run();
+    return actions.icGetMake(p, env);
+  },
+  async icSendMake(p, env) {
+    const url = await makeHook(env);
+    if (!url) throw new Error('MakeのWebhook URLが未設定です');
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p.payload || {}) });
+    return { status: r.status, body: (await r.text()).slice(0, 4000) };
   },
   async icSaveSettings(p, env) {
     const s = p.settings || {};
@@ -153,6 +177,7 @@ async function rpc(req, env, cors) {
 }
 
 async function image(req, env, ctx, id) {
+  id = id.replace(/\.(jpe?g|png|webp)$/, '');
   if (!/^ic[0-9a-f]{40}$/.test(id)) return new Response('not found', { status: 404 });
   const cache = caches.default;
   const hit = await cache.match(req);

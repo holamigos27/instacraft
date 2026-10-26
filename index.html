@@ -772,10 +772,26 @@
       <div class="font-display text-3xl text-white">INSTAGRAM <span class="text-accent">連携設定</span></div>
       <button class="icon-btn" data-close><i class="fa-solid fa-xmark text-lg"></i></button>
     </div>
-    <p class="text-[11px] text-slate-400 leading-relaxed">このサイトから直接投稿するには、Instagram Graph API（公式API）と、画像を公開URLにするための Cloudinary（無料枠あり）が必要です。設定値はこのPCのブラウザ内にだけ保存されます。未設定でも「全画像を保存＋本文コピー」で手動投稿できます。</p>
+    <p class="text-[11px] text-slate-400 leading-relaxed"><b class="text-slate-200">Make</b>（自動化サービス・無料プランあり）のシナリオ経由でInstagramに投稿します。Meta for Developers への登録は不要で、MakeのInstagram連携（Facebookログイン）だけで使えます。未設定でも「全画像を保存＋本文コピー」で手動投稿できます。</p>
+
+    <div class="flex items-center gap-3">
+      <span class="text-[11px] text-slate-400">投稿方法</span>
+      <div class="seg w-[360px]" id="cfgMethod">
+        <button data-method="make" class="on"><i class="fa-solid fa-diagram-project mr-1"></i>Make経由（おすすめ）</button>
+        <button data-method="graph"><i class="fa-solid fa-code mr-1"></i>Graph API直接（上級者）</button>
+      </div>
+    </div>
 
     <div class="grid grid-cols-2 gap-5">
-      <div class="card space-y-2.5">
+      <div class="card space-y-2.5" data-for-method="make">
+        <div class="sec-title !mb-1"><i class="fa-solid fa-diagram-project"></i>Make（Webhook）</div>
+        <div><label class="lbl">Webhook URL</label><input class="field select-text" id="cfgMakeUrl" placeholder="https://hook.eu2.make.com/xxxxxxxx"></div>
+        <div class="text-[10px] text-slate-500" id="cfgMakeState"></div>
+        <div><label class="lbl">投稿先アカウント名（表示用・任意）</label><input class="field select-text" id="cfgMakeAccount" placeholder="例：craques_fc"></div>
+        <button class="btn w-full" id="cfgTestMake"><i class="fa-solid fa-paper-plane"></i>Makeに試し送信（投稿はされません）</button>
+        <div class="text-[11px]" id="cfgMakeResult"></div>
+      </div>
+      <div class="card space-y-2.5 hidden" data-for-method="graph">
         <div class="sec-title !mb-1"><i class="fa-brands fa-instagram"></i>Instagram Graph API</div>
         <div><label class="lbl">APIホスト</label>
           <select class="field" id="cfgHost">
@@ -789,26 +805,49 @@
         <div class="text-[11px]" id="cfgIgResult"></div>
       </div>
       <div class="card space-y-2.5">
-        <div class="sec-title !mb-1"><i class="fa-solid fa-cloud"></i>Cloudinary（画像の公開URL）</div>
-        <div><label class="lbl">Cloud name</label><input class="field select-text" id="cfgCloud" placeholder="your-cloud-name"></div>
-        <div><label class="lbl">Upload preset（Unsigned）</label><input class="field select-text" id="cfgPreset" placeholder="teampost_unsigned"></div>
-        <div><label class="lbl">フォルダ（任意）</label><input class="field select-text" id="cfgFolder" placeholder="teampost"></div>
-        <p class="text-[10px] text-slate-500 leading-relaxed">アップロードされた画像はInstagramが取得できるよう公開URLになります。投稿後はCloudinaryの管理画面から削除できます。</p>
+        <div class="sec-title !mb-1"><i class="fa-solid fa-cloud"></i>画像の公開先</div>
+        <p class="text-[10px] text-slate-500 leading-relaxed">Instagramは画像を公開URLから取り込みます。投稿する画像をどこに置くかを選びます。</p>
+        <select class="field" id="cfgImgHost">
+          <option value="server">instaCRAFTの共有サーバー（設定不要）</option>
+          <option value="cloudinary">Cloudinary（自分のアカウント）</option>
+        </select>
+        <div class="space-y-2.5" id="cfgCloudBox">
+          <div><label class="lbl">Cloud name</label><input class="field select-text" id="cfgCloud" placeholder="your-cloud-name"></div>
+          <div><label class="lbl">Upload preset（Unsigned）</label><input class="field select-text" id="cfgPreset" placeholder="teampost_unsigned"></div>
+          <div><label class="lbl">フォルダ（任意）</label><input class="field select-text" id="cfgFolder" placeholder="teampost"></div>
+          <p class="text-[10px] text-slate-500 leading-relaxed">Cloudinary に無料登録 → Settings → Upload → Upload presets で <b>Unsigned</b> のプリセットを作り、Cloud name とプリセット名を入力します。</p>
+        </div>
       </div>
     </div>
 
-    <details class="card">
-      <summary class="cursor-pointer text-xs font-bold text-slate-200"><i class="fa-solid fa-book-open text-accent mr-2"></i>準備手順ガイド（初回のみ）</summary>
+    <details class="card" data-for-method="make" open>
+      <summary class="cursor-pointer text-xs font-bold text-slate-200"><i class="fa-solid fa-book-open text-accent mr-2"></i>Makeの準備手順（初回のみ・チームで1回）</summary>
+      <ol class="list-decimal pl-5 mt-3 space-y-1.5 text-[11px] text-slate-300 leading-relaxed">
+        <li>Instagramアカウントを<b>ビジネスアカウント</b>にし、<b>Facebookページとリンク</b>する（Makeの仕様で、クリエイターアカウントは不可）。</li>
+        <li><b>make.com</b> に無料登録し、「Create a new scenario」を開く。</li>
+        <li>最初のモジュールに <b>Webhooks › Custom webhook</b> を置き、「Add」でWebhookを作成 → 表示された <b>URLをコピー</b>して左の欄に貼り付け、保存。</li>
+        <li>「<b>Makeに試し送信</b>」を押す（Make側で「Successfully determined」と出れば、送られるデータの形が登録されます）。</li>
+        <li>Webhookの後ろに <b>Router</b> を置き、2本に分ける：
+          <ul class="list-disc pl-4 mt-1 space-y-1">
+            <li>1本目（フィルター：<code>mode</code> = <code>publish</code> かつ <code>count</code> = 1）→ <b>Instagram for Business › Create a photo post</b>。Photo URL に <code>image_url</code>、Caption に <code>caption</code>。</li>
+            <li>2本目（フィルター：<code>mode</code> = <code>publish</code> かつ <code>count</code> ≥ 2）→ <b>Create a carousel post</b>。Files の「Map」をオンにして <code>images[]</code> を割り当て、Caption に <code>caption</code>。</li>
+          </ul></li>
+        <li>Instagramモジュールの初回に「Create a connection」→ Facebookでログインし、投稿するページ／アカウントを選ぶ。</li>
+        <li>（任意）各ルートの最後に <b>Webhooks › Webhook response</b> を置き、Body を <code>{"ok":true,"id":"{{投稿ID}}"}</code> にすると、こちらで完了を確認できます。</li>
+        <li>シナリオを保存して <b>ON</b>（Immediately）にすれば準備完了です。</li>
+      </ol>
+      <p class="text-[10px] text-slate-500 mt-2">※ フィード投稿は縦横比 4:5〜1.91:1 のJPEG、カルーセルは最大10枚です。MakeのInstagram連携にはストーリーズ投稿がないため、ストーリーズは「全画像を保存」からアプリで投稿してください。</p>
+    </details>
+    <details class="card hidden" data-for-method="graph">
+      <summary class="cursor-pointer text-xs font-bold text-slate-200"><i class="fa-solid fa-book-open text-accent mr-2"></i>Graph APIの準備手順</summary>
       <ol class="list-decimal pl-5 mt-3 space-y-1.5 text-[11px] text-slate-300 leading-relaxed">
         <li>Instagramアプリでアカウントを<b>プロアカウント（ビジネス／クリエイター）</b>に切り替える。</li>
         <li>Facebookページを作成し、Instagramアカウントと<b>リンク</b>する（Facebookログイン経由の場合）。</li>
         <li><b>Meta for Developers</b>でアプリを作成し、「Instagram Graph API」を追加する。</li>
         <li>Graph APIエクスプローラで <code>instagram_basic</code> <code>instagram_content_publish</code> <code>pages_show_list</code> <code>pages_read_engagement</code> の権限付きトークンを発行し、<b>長期トークン（約60日有効）</b>に交換する。</li>
         <li><code>/me/accounts</code> でページIDを確認し、<code>/{ページID}?fields=instagram_business_account</code> で<b>InstagramユーザーID</b>を取得する。</li>
-        <li><b>Cloudinary</b>に無料登録 → Settings → Upload → Upload presets で <b>Unsigned</b> のプリセットを作成し、Cloud nameとプリセット名を入力する。</li>
         <li>「接続テスト」でアカウント名が表示されれば準備完了です。</li>
       </ol>
-      <p class="text-[10px] text-slate-500 mt-2">※ フィード投稿は縦横比 4:5〜1.91:1 のJPEGのみ、カルーセルは最大10枚です（API仕様）。9:16はストーリーズとして投稿できます。</p>
     </details>
 
     <div class="flex justify-between gap-2">
@@ -3635,7 +3674,7 @@ $('#pvDots').addEventListener('click', e => { const d = e.target.closest('[data-
 $('#pvStory').addEventListener('click', e => { const r = e.currentTarget.getBoundingClientRect(); pvGo(PV.i + (e.clientX - r.left > r.width / 3 ? 1 : -1)); });
 function updatePreviewMeta() {
   const t = S.team, cfg = igCfg(), ini = (t.short || t.name || 'T').slice(0, 3);
-  const acc = cfg.username || t.account || 'account';
+  const acc = igAccount(cfg) || t.account || 'account';
   ['#pvAvatar', '#pvNavAvatar', '#pvStAvatar'].forEach(id => {
     const el = $(id);
     if (cfg.picture) el.innerHTML = `<img src="${esc(cfg.picture)}" class="w-full h-full object-cover">`;
@@ -3648,7 +3687,7 @@ function linkify(s) {
   return esc(s).replace(/(^|[\s(])([#＃][^\s#＃<]+)/g, '$1<span class="tag">$2</span>').replace(/(^|[\s(])(@[A-Za-z0-9._]+)/g, '$1<span class="tag">$2</span>');
 }
 function pvRenderCaption() {
-  const v = cap.value, acc = `<b class="font-semibold mr-1">${esc(igCfg().username || S.team.account || 'account')}</b>`;
+  const v = cap.value, acc = `<b class="font-semibold mr-1">${esc(igAccount(igCfg()) || S.team.account || 'account')}</b>`;
   const lines = v.split('\n');
   const long = v.length > 110 || lines.length > 2;
   const body = (!long || PV.expanded) ? linkify(v)
@@ -3678,27 +3717,66 @@ $('#btnPreviewTop').addEventListener('click', openPreview);
 $('#pvPublish').addEventListener('click', () => { closePreview(); openPublish(); });
 
 /* ==========================================================
-   INSTAGRAM PUBLISHING (Graph API + Cloudinary)
+   INSTAGRAM PUBLISHING (Make webhook or Graph API; images on the team server or Cloudinary)
    ========================================================== */
-const igCfg = () => store.get('igcfg', {});
-const igReady = c => !!(c.user && c.token && c.cloud && c.preset);
+const igCfg = () => ({ method: 'make', imgHost: REMOTE ? 'server' : 'cloudinary', ...store.get('igcfg', {}) });
+/* the Make webhook is shared by the team and kept on the server (in local mode: this browser) */
+let MAKE = { configured: false, hint: '' };
+async function loadMakeState() { if (REMOTE && adminToken()) MAKE = await api('icGetMake').catch(() => MAKE); }
+const makeReady = c => REMOTE ? MAKE.configured : !!c.makeUrl;
+const imgReady = c => (c.imgHost === 'server' && REMOTE) || !!(c.cloud && c.preset);
+const igReady = c => imgReady(c) && (c.method === 'graph' ? !!(c.user && c.token) : makeReady(c));
+const igAccount = c => c.method === 'graph' ? c.username : c.makeAccount;
+let cfgMethod = 'make';
+function showCfgMethod() {
+  $$('#cfgMethod [data-method]').forEach(b => b.classList.toggle('on', b.dataset.method === cfgMethod));
+  $$('#settingsModal [data-for-method]').forEach(el => el.classList.toggle('hidden', el.dataset.forMethod !== cfgMethod));
+}
+function showImgHost() {
+  $('#cfgImgHost option[value=server]').disabled = !REMOTE;
+  if (!REMOTE) $('#cfgImgHost').value = 'cloudinary';
+  $('#cfgCloudBox').classList.toggle('hidden', $('#cfgImgHost').value === 'server');
+}
+function showMakeState() {
+  const c = igCfg();
+  $('#cfgMakeState').innerHTML = REMOTE
+    ? (MAKE.configured ? `<span class="text-accent"><i class="fa-solid fa-circle-check"></i> チーム共通で設定済み（${esc(MAKE.hint)}）</span>。変更するときだけ新しいURLを入力してください。` : 'URLはチーム共通でサーバーに保存されます（STAFF全員が使えます）。')
+    : (c.makeUrl ? '<span class="text-accent"><i class="fa-solid fa-circle-check"></i> このブラウザに設定済み</span>' : 'このブラウザに保存されます。');
+}
 function fillSettings() {
   const c = igCfg();
+  cfgMethod = c.method;
   $('#cfgHost').value = c.host || 'graph.facebook.com';
   $('#cfgVer').value = c.ver || ''; $('#cfgUser').value = c.user || ''; $('#cfgToken').value = c.token || '';
   $('#cfgCloud').value = c.cloud || ''; $('#cfgPreset').value = c.preset || ''; $('#cfgFolder').value = c.folder || '';
+  $('#cfgImgHost').value = c.imgHost;
+  $('#cfgMakeUrl').value = REMOTE ? '' : (c.makeUrl || ''); $('#cfgMakeAccount').value = c.makeAccount || '';
   $('#cfgIgResult').innerHTML = c.username ? `<span class="text-accent"><i class="fa-solid fa-circle-check"></i> 接続済み：@${esc(c.username)}</span>` : '';
+  $('#cfgMakeResult').innerHTML = '';
+  showCfgMethod(); showImgHost(); showMakeState();
 }
 function readSettingsForm() {
   const prev = igCfg();
   const c = {
+    method: cfgMethod, imgHost: $('#cfgImgHost').value,
     host: $('#cfgHost').value, ver: $('#cfgVer').value.trim(), user: $('#cfgUser').value.trim(), token: $('#cfgToken').value.trim(),
     cloud: $('#cfgCloud').value.trim(), preset: $('#cfgPreset').value.trim(), folder: $('#cfgFolder').value.trim(),
+    makeUrl: REMOTE ? '' : $('#cfgMakeUrl').value.trim(), makeAccount: $('#cfgMakeAccount').value.trim().replace(/^@/, ''),
   };
   if (prev.user === c.user && prev.token === c.token) { c.username = prev.username; c.picture = prev.picture; }
   return c;
 }
-function openSettings() { fillSettings(); openModal('settingsModal'); }
+/* a new webhook URL typed in (shared mode) goes to the server */
+async function saveMakeUrl() {
+  const url = $('#cfgMakeUrl').value.trim();
+  if (!REMOTE || !url) return;
+  MAKE = await api('icSetMake', { url });
+  $('#cfgMakeUrl').value = '';
+  showMakeState();
+}
+async function openSettings() { await loadMakeState(); fillSettings(); openModal('settingsModal'); }
+$('#cfgMethod').addEventListener('click', e => { const b = e.target.closest('[data-method]'); if (b) { cfgMethod = b.dataset.method; showCfgMethod(); } });
+$('#cfgImgHost').addEventListener('change', showImgHost);
 const graphBase = c => `https://${c.host || 'graph.facebook.com'}/${c.ver ? c.ver.replace(/^\/|\/$/g, '') + '/' : ''}`;
 async function graph(c, path, params = {}, method = 'GET') {
   const body = new URLSearchParams({ ...params, access_token: c.token });
@@ -3708,6 +3786,40 @@ async function graph(c, path, params = {}, method = 'GET') {
   if (!r.ok || j.error) throw new Error(j.error ? `${j.error.message}${j.error.error_user_msg ? '（' + j.error.error_user_msg + '）' : ''}` : `HTTP ${r.status}`);
   return j;
 }
+/* the data the Make scenario receives */
+function makePayload(mode, urls, post) {
+  return {
+    mode, target: 'feed', count: urls.length, caption: mode === 'test' ? '（instaCRAFTからの試し送信です）' : cap.value,
+    image_url: urls[0], image_urls: urls, images: urls.map(u => ({ media_type: 'IMAGE', url: u, image_url: u })),
+    title: post?.title || '', post_id: post?.id || '', sent_at: new Date().toISOString(),
+  };
+}
+async function sendMake(c, payload) {
+  let r;
+  if (REMOTE) r = await api('icSendMake', { payload });
+  else {
+    if (!c.makeUrl) throw new Error('MakeのWebhook URLが未設定です');
+    const res = await fetch(c.makeUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    r = { status: res.status, body: await res.text() };
+  }
+  if (r.status >= 400) throw new Error(`Make: ${r.status} ${String(r.body).slice(0, 300)}`);
+  let j = null; try { j = JSON.parse(r.body); } catch (e) { /* plain text */ }
+  if (j && j.ok === false) throw new Error('Make: ' + (j.error || j.message || r.body));
+  return { accepted: /^\s*accepted\s*$/i.test(r.body), json: j, body: r.body };
+}
+$('#cfgTestMake').addEventListener('click', async () => {
+  const out = $('#cfgMakeResult');
+  out.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> 送信中…';
+  try {
+    await saveMakeUrl();
+    const c = readSettingsForm();
+    const sample = ['https://res.cloudinary.com/demo/image/upload/sample.jpg', 'https://res.cloudinary.com/demo/image/upload/sample.jpg'];
+    const r = await sendMake(c, makePayload('test', sample, CUR.post));
+    out.innerHTML = `<span class="text-accent"><i class="fa-solid fa-circle-check"></i> Makeが受け取りました（${esc(String(r.body).slice(0, 60))}）</span>`;
+  } catch (e) {
+    out.innerHTML = `<span class="text-hot"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(e.message)}</span>`;
+  }
+});
 $('#cfgTestIg').addEventListener('click', async () => {
   const c = readSettingsForm();
   if (!c.user || !c.token) { $('#cfgIgResult').innerHTML = '<span class="text-hot">ユーザーIDとトークンを入力してください</span>'; return; }
@@ -3722,15 +3834,23 @@ $('#cfgTestIg').addEventListener('click', async () => {
     $('#cfgIgResult').innerHTML = `<span class="text-hot"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(e.message)}</span>`;
   }
 });
-$('#cfgSave').addEventListener('click', () => { store.set('igcfg', readSettingsForm()); renderIgChip(); updatePreviewMeta(); closeModal('settingsModal'); toast('連携設定を保存しました', 'fa-floppy-disk'); });
-$('#cfgClear').addEventListener('click', () => { if (!confirm('保存されている連携設定（トークン等）を消去しますか？')) return; store.set('igcfg', {}); fillSettings(); renderIgChip(); toast('連携設定を消去しました', 'fa-eraser'); });
+$('#cfgSave').addEventListener('click', async () => {
+  try { await saveMakeUrl(); } catch (e) { return toast(e.message, 'fa-triangle-exclamation', 'text-hot', 4000); }
+  store.set('igcfg', readSettingsForm()); renderIgChip(); updatePreviewMeta(); closeModal('settingsModal'); toast('連携設定を保存しました', 'fa-floppy-disk');
+});
+$('#cfgClear').addEventListener('click', async () => {
+  if (!confirm('このブラウザに保存されている連携設定（トークン等）を消去しますか？')) return;
+  store.set('igcfg', {});
+  if (REMOTE && MAKE.configured && confirm('チーム共通のMake Webhook URLも消去しますか？（STAFF全員がMakeから投稿できなくなります）')) MAKE = await api('icSetMake', { url: '' }).catch(() => MAKE);
+  fillSettings(); renderIgChip(); toast('連携設定を消去しました', 'fa-eraser');
+});
 $('#btnSettings').addEventListener('click', openSettings);
 $('#btnSettingsHome').addEventListener('click', openSettings);
 $('#pubSettings').addEventListener('click', () => { closeModal('publishModal'); openSettings(); });
 function renderIgChip() {
   const c = igCfg();
   $('#igStatusChip').innerHTML = igReady(c)
-    ? `<span class="badge bg-accent/10 text-accent border border-accent/30"><i class="fa-brands fa-instagram"></i>${c.username ? '@' + esc(c.username) : '連携設定済み'}</span>`
+    ? `<span class="badge bg-accent/10 text-accent border border-accent/30"><i class="fa-brands fa-instagram"></i>${igAccount(c) ? '@' + esc(igAccount(c)) : c.method === 'make' ? 'Make連携済み' : '連携設定済み'}</span>`
     : `<span class="badge bg-white/5 text-slate-400 border border-line"><i class="fa-brands fa-instagram"></i>Instagram未連携</span>`;
 }
 
@@ -3738,6 +3858,7 @@ let pubTarget = 'feed', publishing = false;
 async function openPublish() {
   if (!CUR.post) return;
   pubTarget = S.ratio === '9:16' ? 'story' : 'feed';
+  await openPublishReady();
   $('#pubLogBox').classList.add('hidden'); $('#pubLog').innerHTML = '';
   openModal('publishModal');
   captureSlide();
@@ -3748,8 +3869,9 @@ async function openPublish() {
 }
 function pubChecks() {
   const c = igCfg(), n = CUR.post.slides.length, v = cap.value, tags = (v.match(/#[^\s#]+/g) || []).length;
+  const via = c.method === 'make' ? 'Make経由' : 'Graph API';
   const list = [
-    { ok: igReady(c), label: igReady(c) ? `Instagram連携：${c.username ? '@' + c.username : '設定済み'}` : 'Instagram連携が未設定です（連携設定から入力）', block: true },
+    { ok: igReady(c), label: igReady(c) ? `Instagram連携（${via}）：${igAccount(c) ? '@' + igAccount(c) : '設定済み'}` : `Instagram連携（${via}）が未設定です（連携設定から入力）`, block: true },
     { ok: n <= MAX_SLIDES, label: `画像の枚数：${n}枚（最大${MAX_SLIDES}枚）`, block: true },
   ];
   if (pubTarget === 'feed') {
@@ -3757,6 +3879,8 @@ function pubChecks() {
     list.push({ ok: v.length <= 2200, label: `キャプション：${v.length} / 2200文字`, block: true });
     list.push({ ok: tags <= 30, label: `ハッシュタグ：${tags} / 30個`, block: true });
     list.push({ ok: !!v.trim(), label: v.trim() ? 'キャプションあり' : 'キャプションが空です（そのまま投稿も可能）', warn: true });
+  } else if (c.method === 'make') {
+    list.push({ ok: false, label: 'MakeのInstagram連携はストーリーズ投稿に対応していません。「全画像を保存」してアプリから投稿してください', block: true });
   } else {
     list.push({ ok: true, label: `ストーリーズとして${n}件を順番に投稿します（キャプションは表示されません）` });
   }
@@ -3765,13 +3889,14 @@ function pubChecks() {
 function renderPubChecks() {
   $$('#pubTarget button').forEach(b => b.classList.toggle('on', b.dataset.target === pubTarget));
   const c = igCfg();
-  $('#pubAccount').innerHTML = c.username ? `投稿アカウント：<b class="text-white">@${esc(c.username)}</b>` : '';
+  $('#pubAccount').innerHTML = igAccount(c) ? `投稿アカウント：<b class="text-white">@${esc(igAccount(c))}</b>` : '';
   const list = pubChecks();
   $('#pubChecks').innerHTML = list.map(x => `<div class="flex items-start gap-2 ${x.ok ? 'text-slate-200' : (x.warn ? 'text-amber-300' : 'text-hot')}"><i class="fa-solid ${x.ok ? 'fa-circle-check text-accent' : (x.warn ? 'fa-circle-exclamation' : 'fa-circle-xmark')} mt-0.5"></i><span>${esc(x.label)}</span></div>`).join('') +
     (CUR.post.status === 'posted' ? `<div class="flex items-start gap-2 text-amber-300"><i class="fa-solid fa-circle-exclamation mt-0.5"></i><span>この投稿は投稿済みです（${esc(fmtDateTime(CUR.post.postedAt))}）。もう一度投稿すると重複します。</span></div>` : '') +
     `<p class="text-[10px] text-slate-500 pt-1">連携が未設定でも、「全画像を保存」＋「本文コピー」でスマホのInstagramアプリから同じ順番で投稿できます。</p>`;
   $('#pubGo').disabled = publishing || list.some(x => !x.ok && x.block);
 }
+async function openPublishReady() { await loadMakeState(); renderIgChip(); }
 $('#pubTarget').addEventListener('click', e => { const b = e.target.closest('[data-target]'); if (b && !publishing) { pubTarget = b.dataset.target; renderPubChecks(); } });
 function plog(msg, kind = '') {
   $('#pubLogBox').classList.remove('hidden');
@@ -3788,6 +3913,20 @@ async function uploadCloudinary(c, blob, name) {
   if (!r.ok || !j.secure_url) throw new Error('Cloudinary: ' + (j.error?.message || 'HTTP ' + r.status));
   return j.secure_url;
 }
+/* Instagram takes JPEGs from a public URL: the team server (no setup) or Cloudinary */
+async function jpegUnder(dataUrl, max = 2_500_000) {
+  for (let q = 0.85; dataUrl.length > max && q > 0.4; q -= 0.1) {
+    const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl; });
+    const cv = document.createElement('canvas'); cv.width = im.width; cv.height = im.height;
+    cv.getContext('2d').drawImage(im, 0, 0);
+    dataUrl = cv.toDataURL('image/jpeg', q);
+  }
+  return dataUrl;
+}
+async function publicImage(c, dataUrl, name) {
+  if (c.imgHost === 'server' && REMOTE) return (await api('icSaveImage', { data: await jpegUnder(dataUrl) })).url + '.jpg';
+  return uploadCloudinary(c, await dataURLtoBlob(dataUrl), name);
+}
 async function waitContainer(c, id) {
   for (let n = 0; n < 40; n++) {
     const j = await graph(c, id, { fields: 'status_code' });
@@ -3801,19 +3940,31 @@ async function publishNow() {
   const c = igCfg(), post = CUR.post;
   const n = post.slides.length;
   const where = pubTarget === 'feed' ? (n > 1 ? `フィードに${n}枚のカルーセル` : 'フィードに1枚') : `ストーリーズに${n}件`;
-  if (!confirm(`@${c.username || c.user} の${where}として公開します。\n投稿はすぐにフォロワーに表示されます。よろしいですか？`)) return;
+  const who = igAccount(c) ? '@' + igAccount(c) : c.method === 'make' ? 'Makeで連携したアカウント' : c.user;
+  if (!confirm(`${who} の${where}として公開します。\n投稿はすぐにフォロワーに表示されます。よろしいですか？`)) return;
   publishing = true; renderPubChecks(); $('#pubClose').disabled = true;
   $('#pubLog').innerHTML = '';
   try {
     plog('画像をJPEGに書き出しています…');
     const urls = await renderAllSlides(1080, 'jpeg', 0.92);
     const pub = [];
+    const hostName = c.imgHost === 'server' && REMOTE ? '共有サーバー' : 'Cloudinary';
     for (let i = 0; i < urls.length; i++) {
-      plog(`(${i + 1}/${n}) Cloudinaryへアップロード中…`);
-      pub.push(await uploadCloudinary(c, await dataURLtoBlob(urls[i]), `${post.id}_${i + 1}.jpg`));
+      plog(`(${i + 1}/${n}) ${hostName}へアップロード中…`);
+      pub.push(await publicImage(c, urls[i], `${post.id}_${i + 1}.jpg`));
     }
     plog('アップロード完了', 'ok');
     let mediaIds = [];
+    if (c.method === 'make') {
+      plog(n > 1 ? `Makeに送信中（${n}枚のカルーセル・この順番で投稿されます）…` : 'Makeに送信中…');
+      const r = await sendMake(c, makePayload('publish', pub, post));
+      post.status = 'posted'; post.postedAt = Date.now(); post.permalink = r.json?.permalink || ''; post.postedTo = 'feed'; post.postedVia = 'make';
+      await savePostNow();
+      plog(r.accepted ? 'Makeが受け付けました。少し待ってからInstagramで投稿を確認してください（Make側でエラーになった場合はMakeの履歴に出ます）' : 'Makeでの投稿が完了しました！', 'ok');
+      if (post.permalink) $('#pubLog').insertAdjacentHTML('beforeend', `<a href="${esc(post.permalink)}" target="_blank" rel="noopener" class="log-line text-sky underline">${esc(post.permalink)}</a>`);
+      toast(r.accepted ? 'Makeに送信しました' : 'Instagramに投稿しました', 'fa-circle-check', 'text-accent', 4000);
+      return;
+    }
     if (pubTarget === 'story') {
       for (let i = 0; i < n; i++) {
         plog(`(${i + 1}/${n}) ストーリーズを作成中…`);
@@ -4240,7 +4391,7 @@ document.addEventListener('keydown', e => {
   await loadCustomPresets();
   renderTypeSelects(); renderInfoFields();
   renderPresetCards(); renderBgPane(); renderTagGroups(); renderMentions(); renderGallery(); renderAssetTiles(); renderQuickTools();
-  renderIgChip(); updatePreviewMeta();
+  renderIgChip(); updatePreviewMeta(); loadMakeState().then(renderIgChip);
   renderVariants(); syncObjBar();
   initFolds(); applyLayout(false);
   if (location.protocol === 'file:') toast('PhotoCraft / VectorCraft を使うには start.bat から起動してください', 'fa-circle-info', 'text-sky', 5000);
