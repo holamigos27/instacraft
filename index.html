@@ -82,7 +82,8 @@
   #objBar.off button, #objBar.off input { opacity:.35; pointer-events:none; }
   body.mode-preset .post-only, body.mode-post .preset-only, body.view-home .preset-only { display:none !important; }
   .ltab { font-size: 9.5px; padding-left: 0; padding-right: 0; min-width: 0; }
-  #centerBar.compact .tab-label { display:none; }
+  .thin-x::-webkit-scrollbar { height: 4px; }
+  #centerBar.compact .tab-label, #centerBar.compact .mt-label, #centerBar.tiny #obOpacity, #centerBar.tiny [data-ob^="flip"] { display:none; }
   #centerBar.compact #objTools .w-px, #centerBar.tiny #objTools [data-op="forward"], #centerBar.tiny #objTools [data-op="backward"] { display:none; }
   body.craft-max #viewEditor { grid-template-columns: minmax(0,1fr) !important; }
   body.craft-max #viewEditor > aside, body.craft-max #objBar { display: none !important; }
@@ -445,7 +446,7 @@
 
   <!-- CENTER -->
   <section class="flex flex-col min-w-0 min-h-0">
-    <div class="h-12 flex items-center justify-between gap-3 px-3 border-b border-line bg-panel/60 overflow-hidden" id="centerBar">
+    <div class="h-12 flex items-center justify-between gap-3 px-3 border-b border-line bg-panel/60 overflow-x-auto overflow-y-hidden thin-x" id="centerBar">
       <div class="flex items-center gap-3 min-w-0 flex-1">
         <button class="icon-btn flex-shrink-0 -mr-1" id="tglLeft" title="左パネルを畳む／開く"><i class="fa-solid fa-angles-left"></i></button>
         <div class="flex bg-ink border border-line rounded-[10px] p-0.5 flex-shrink-0" id="centerTabs">
@@ -453,12 +454,32 @@
           <button class="mode-tab" data-ctab="photocraft" title="PhotoCraft"><i class="fa-solid fa-camera-retro"></i><span class="tab-label">PhotoCraft</span></button>
           <button class="mode-tab" data-ctab="vectorcraft" title="VectorCraft"><i class="fa-solid fa-bezier-curve"></i><span class="tab-label">VectorCraft</span></button>
         </div>
-        <div class="flex items-center gap-1 overflow-x-auto min-w-0 flex-1 py-1" id="quickTools"></div>
+        <div class="flex items-center gap-1 flex-shrink-0 py-1" id="quickTools"></div>
         <div class="hidden items-center gap-1.5 overflow-x-auto min-w-0 flex-1 py-1" id="craftTools">
           <button class="mini-btn flex items-center gap-1.5" data-ct="send"><i class="fa-solid fa-file-import text-accent"></i><span>スライド<b class="ctSlide">1</b>を開く</span></button>
           <button class="mini-btn flex items-center gap-1.5" data-ct="pull" id="ctPull"><i class="fa-solid fa-file-export text-accent"></i>書き出してスライドに反映</button>
           <span class="text-[11px] text-slate-400 truncate" id="craftHint"></span>
         </div>
+      </div>
+        <!-- 変形・整列（選択中のオブジェクト） -->
+      <div class="flex items-center gap-0.5 flex-shrink-0 border-l border-line pl-2" id="objBar" title="1つ選択：キャンバス基準 ／ 複数選択：選択範囲基準">
+        <button class="icon-btn !w-7 !h-7" data-ob="al:left" title="左揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M3 2v16"/><rect x="5" y="5" width="11" height="3.5" rx="1"/><rect x="5" y="11.5" width="7" height="3.5" rx="1"/></svg></button>
+        <button class="icon-btn !w-7 !h-7" data-ob="al:cx" title="左右中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M10 2v16"/><rect x="4" y="5" width="12" height="3.5" rx="1"/><rect x="6" y="11.5" width="8" height="3.5" rx="1"/></svg></button>
+        <button class="icon-btn !w-7 !h-7" data-ob="al:right" title="右揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M17 2v16"/><rect x="4" y="5" width="11" height="3.5" rx="1"/><rect x="8" y="11.5" width="7" height="3.5" rx="1"/></svg></button>
+        <span class="w-px h-5 bg-line mx-0.5 flex-shrink-0"></span>
+        <button class="icon-btn !w-7 !h-7" data-ob="al:top" title="上揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 3h16"/><rect x="5" y="5" width="3.5" height="11" rx="1"/><rect x="11.5" y="5" width="3.5" height="7" rx="1"/></svg></button>
+        <button class="icon-btn !w-7 !h-7" data-ob="al:cy" title="上下中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 10h16"/><rect x="5" y="4" width="3.5" height="12" rx="1"/><rect x="11.5" y="6" width="3.5" height="8" rx="1"/></svg></button>
+        <button class="icon-btn !w-7 !h-7" data-ob="al:bottom" title="下揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 17h16"/><rect x="5" y="4" width="3.5" height="11" rx="1"/><rect x="11.5" y="8" width="3.5" height="7" rx="1"/></svg></button>
+        <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
+        <button class="icon-btn !w-7 !h-7" data-ob="flipX" title="左右反転"><i class="fa-solid fa-left-right"></i></button>
+        <button class="icon-btn !w-7 !h-7" data-ob="flipY" title="上下反転"><i class="fa-solid fa-up-down"></i></button>
+        <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
+        <label class="flex items-center gap-1 text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0" title="回転"><i class="fa-solid fa-rotate-right"></i>
+          <input type="number" class="field !w-14 !py-0.5 !px-1.5 text-center" id="obAngle" min="-180" max="180" step="1" value="0">°</label>
+        <button class="icon-btn !w-7 !h-7" data-ob="resetRot" title="回転をリセット"><i class="fa-solid fa-rotate-left"></i></button>
+        <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
+        <label class="flex items-center gap-1.5 text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0" title="不透明度"><i class="fa-solid fa-circle-half-stroke"></i>
+          <input type="range" class="!w-16" id="obOpacity" min="0" max="100" step="1" value="100"><b class="text-slate-200 w-8 tabular-nums ob-out" id="obOpacityOut">100%</b></label>
       </div>
       <div class="flex items-center gap-0.5 flex-shrink-0" id="objTools">
         <button class="icon-btn" data-op="front" title="最前面へ"><i class="fa-solid fa-angles-up"></i></button>
@@ -476,28 +497,6 @@
       <button class="icon-btn flex-shrink-0 -ml-1" id="tglRight" title="右パネルを畳む／開く"><i class="fa-solid fa-angles-right"></i></button>
     </div>
 
-    <!-- 変形・整列バー（選択中のオブジェクト） -->
-    <div class="h-10 flex items-center gap-1 px-3 border-b border-line bg-panel/40 overflow-x-auto overflow-y-hidden" id="objBar">
-      <span class="text-[10px] text-slate-500 mr-1 whitespace-nowrap flex-shrink-0" id="objBarLabel">整列</span>
-      <button class="icon-btn !w-7 !h-7" data-ob="al:left" title="左揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M3 2v16"/><rect x="5" y="5" width="11" height="3.5" rx="1"/><rect x="5" y="11.5" width="7" height="3.5" rx="1"/></svg></button>
-      <button class="icon-btn !w-7 !h-7" data-ob="al:cx" title="左右中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M10 2v16"/><rect x="4" y="5" width="12" height="3.5" rx="1"/><rect x="6" y="11.5" width="8" height="3.5" rx="1"/></svg></button>
-      <button class="icon-btn !w-7 !h-7" data-ob="al:right" title="右揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M17 2v16"/><rect x="4" y="5" width="11" height="3.5" rx="1"/><rect x="8" y="11.5" width="7" height="3.5" rx="1"/></svg></button>
-      <span class="w-px h-5 bg-line mx-0.5 flex-shrink-0"></span>
-      <button class="icon-btn !w-7 !h-7" data-ob="al:top" title="上揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 3h16"/><rect x="5" y="5" width="3.5" height="11" rx="1"/><rect x="11.5" y="5" width="3.5" height="7" rx="1"/></svg></button>
-      <button class="icon-btn !w-7 !h-7" data-ob="al:cy" title="上下中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 10h16"/><rect x="5" y="4" width="3.5" height="12" rx="1"/><rect x="11.5" y="6" width="3.5" height="8" rx="1"/></svg></button>
-      <button class="icon-btn !w-7 !h-7" data-ob="al:bottom" title="下揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 17h16"/><rect x="5" y="4" width="3.5" height="11" rx="1"/><rect x="11.5" y="8" width="3.5" height="7" rx="1"/></svg></button>
-      <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
-      <button class="icon-btn !w-7 !h-7" data-ob="flipX" title="左右反転"><i class="fa-solid fa-left-right"></i></button>
-      <button class="icon-btn !w-7 !h-7" data-ob="flipY" title="上下反転"><i class="fa-solid fa-up-down"></i></button>
-      <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
-      <label class="flex items-center gap-1 text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0" title="回転"><i class="fa-solid fa-rotate-right"></i>
-        <input type="number" class="field !w-14 !py-0.5 !px-1.5 text-center" id="obAngle" min="-180" max="180" step="1" value="0">°</label>
-      <button class="icon-btn !w-7 !h-7" data-ob="resetRot" title="回転をリセット"><i class="fa-solid fa-rotate-left"></i></button>
-      <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
-      <label class="flex items-center gap-1.5 text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0" title="不透明度">不透明度
-        <input type="range" class="!w-24" id="obOpacity" min="0" max="100" step="1" value="100"><b class="text-slate-200 w-8 tabular-nums" id="obOpacityOut">100%</b></label>
-      <span class="text-[10px] text-slate-600 ml-auto whitespace-nowrap pl-3 flex-shrink-0" id="obHint">1つ選択：キャンバス基準 ／ 複数選択：選択範囲基準</span>
-    </div>
 
     <div id="stage" class="relative flex-1 min-h-0 overflow-hidden">
       <div id="quickStage" class="absolute inset-0 flex items-center justify-center">
@@ -1665,14 +1664,11 @@ function applyFxPreset(key, img = targetImage()) {
 
 /* ---------------- quick toolbar ---------------- */
 function renderQuickTools() {
-  const tb = (act, icon, label) => `<button class="mini-btn flex items-center gap-1.5" data-mt="${act}" title="${label}"><i class="fa-solid ${icon} text-accent"></i>${label}</button>`;
-  const ib = (act, icon, label) => `<button class="mini-btn !px-2" data-mt="${act}" title="${label}"><i class="fa-solid ${icon}"></i></button>`;
+  const tb = (act, icon, label) => `<button class="mini-btn flex items-center gap-1.5" data-mt="${act}" title="${label}"><i class="fa-solid ${icon} text-accent"></i><span class="mt-label">${label}</span></button>`;
+  // shapes and texts live in the left panel's 素材 / テキスト tabs; this row keeps the photo tools
   $('#quickTools').innerHTML =
     tb('upload', 'fa-upload', '画像追加') + tb('cover', 'fa-expand', '全面に敷く') + tb('shape:dim', 'fa-moon', '暗幕') + tb('shape:bottomGrad', 'fa-circle-half-stroke', '下部グラデ') +
-    `<select class="field !w-auto !py-1 !text-[11px]" id="quickFx"><option value="">フィルター…</option>${Object.keys(FX_PRESETS).map(k => `<option value="${k}">${FX_LABEL[k]}</option>`).join('')}</select>` +
-    `<span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>` +
-    [['rect', 'fa-square', '四角'], ['circle', 'fa-circle', '丸'], ['star', 'fa-star', '星'], ['line', 'fa-minus', 'ライン'], ['frame', 'fa-vector-square', '枠'], ['ribbon', 'fa-ribbon', 'リボン'], ['stripe', 'fa-slash', 'ストライプ']]
-      .map(([k, i, l]) => ib('shape:' + k, i, l)).join('') + ib('text', 'fa-font', 'テキスト');
+    `<select class="field !w-auto !py-1 !text-[11px]" id="quickFx"><option value="">フィルター…</option>${Object.keys(FX_PRESETS).map(k => `<option value="${k}">${FX_LABEL[k]}</option>`).join('')}</select>`;
 }
 $('#quickTools').addEventListener('click', e => {
   const b = e.target.closest('[data-mt]'); if (!b) return;
@@ -1782,7 +1778,6 @@ function syncPropsLive() { syncObjBar(); }
 function syncObjBar() {
   const o = canvas.getActiveObject();
   $('#objBar').classList.toggle('off', !o);
-  $('#objBarLabel').textContent = !o ? '整列（オブジェクトを選択）' : o.type === 'activeSelection' ? `整列（${o.size()}個）` : '整列';
   if (!o) return;
   const ang = Math.round(o.angle > 180 ? o.angle - 360 : o.angle);
   if (document.activeElement !== $('#obAngle')) $('#obAngle').value = ang;
@@ -2062,11 +2057,15 @@ $('#tglRight').addEventListener('click', () => { LAY.right = !LAY.right; applyLa
 $('#stripHead').addEventListener('click', () => { LAY.strip = !LAY.strip; applyLayout(); });
 $('#btnLayoutReset').addEventListener('click', () => { LAY = { ...LAYOUT_DEF, folds: {} }; applyLayout(); toast('レイアウトを初期状態に戻しました', 'fa-table-columns'); });
 /* the center toolbar drops its tab labels when the middle column gets narrow */
-new ResizeObserver(([e]) => {
-  const w = e.contentRect.width;
-  $('#centerBar').classList.toggle('compact', w < 820);
-  $('#centerBar').classList.toggle('tiny', w < 600);
-}).observe($('#centerBar'));
+/* one toolbar row: drop labels step by step until the quick tools fit beside the align bar */
+function fitCenterBar() {
+  const bar = $('#centerBar');
+  const tight = () => bar.scrollWidth > bar.clientWidth + 1;
+  bar.classList.remove('compact', 'tiny');
+  if (tight()) bar.classList.add('compact');
+  if (tight()) bar.classList.add('tiny');
+}
+new ResizeObserver(fitCenterBar).observe($('#centerBar'));
 /* every titled section of the side panels folds on a click of its title */
 function initFolds() {
   $$('#viewEditor aside .sec-title').forEach(t => {
@@ -2778,7 +2777,7 @@ async function setCenterTab(t, { send = false } = {}) {
   $('#objTools').classList.toggle('hidden', !quick);
   $('#objBar').classList.toggle('hidden', !quick);
   $('#btnCraftMax').classList.toggle('hidden', quick);
-  if (quick) { document.body.classList.remove('craft-max'); setTimeout(fitCanvas, 0); return; }
+  if (quick) { document.body.classList.remove('craft-max'); setTimeout(() => { fitCanvas(); fitCenterBar(); }, 0); return; }
   Object.keys(CRAFT).forEach(k => frameOf(k).classList.toggle('hidden', k !== t));
   $('#ctPull').classList.toggle('hidden', t !== 'vectorcraft');
   $('#craftHint').textContent = craftHint(t);
