@@ -1538,7 +1538,7 @@ function onSel(e) {
     toast('画像の四隅が隠れています。左下の − か Ctrl+ホイールで縮小表示すると、つかんでサイズ変更できます', 'fa-magnifying-glass-minus', 'text-sky', 5000);
   }
   // picking something on the canvas opens its properties in the left panel
-  if (e && e.selected && e.selected.length && !HIST.lock && LAY.left && S.tab === 'quick') showLeftTab('props');
+  if (e && e.selected && e.selected.length && !HIST.lock && LAY.left && S.tab === 'quick' && !layerPick) showLeftTab('props');
 }
 
 /* ---------------- snapping guides ---------------- */
@@ -2322,7 +2322,7 @@ function refreshLayers() {
   for (let i = objs.length - 1; i >= 0; i--) {
     const o = objs[i];
     if (o.role === 'bg') continue;
-    rows.push(`<div class="layer-row ${act.includes(o) ? 'active' : ''} ${o.visible === false ? 'opacity-40' : ''}" data-li="${i}">
+    rows.push(`<div class="layer-row cursor-grab ${act.includes(o) ? 'active' : ''} ${o.visible === false ? 'opacity-40' : ''}" data-li="${i}" title="ドラッグで重なり順を変更">
       <i class="fa-solid ${layerIcon(o)} w-4 text-center text-slate-500 text-[11px]"></i>
       <span class="flex-1 truncate">${esc(layerName(o))}</span>
       <button data-la="vis" title="表示切替"><i class="fa-regular ${o.visible === false ? 'fa-eye-slash' : 'fa-eye'} text-[11px]"></i></button>
@@ -2338,7 +2338,54 @@ $('#layerList').addEventListener('click', e => {
   const la = e.target.closest('[data-la]')?.dataset.la;
   if (la === 'vis') { o.visible = o.visible === false; if (!o.visible) canvas.discardActiveObject(); canvas.requestRenderAll(); saveHistory(); refreshLayers(); return; }
   if (la === 'lock') { toggleLock(o); return; }
-  canvas.setActiveObject(o); canvas.requestRenderAll();
+  if (layerDrag.moved) return; // the click that ends a drag
+  pickFromLayers(o);
+});
+/* picking in the layer list keeps the list open (the canvas opens the edit tab) */
+let layerPick = false;
+function pickFromLayers(o) { layerPick = true; try { canvas.setActiveObject(o); } finally { layerPick = false; } canvas.requestRenderAll(); }
+/* drag a row to change the stacking order (top of the list = front) */
+const layerDrag = { row: null, y0: 0, moved: false, pos: -1 };
+const layerLine = document.createElement('div');
+layerLine.className = 'absolute left-0 right-0 h-0.5 bg-accent rounded pointer-events-none hidden';
+$('#layerList').classList.add('relative');
+function layerRows() { return $$('#layerList [data-li]'); }
+$('#layerList').addEventListener('pointerdown', e => {
+  const row = e.target.closest('[data-li]');
+  if (!row || e.button !== 0 || e.target.closest('[data-la]')) return;
+  Object.assign(layerDrag, { row, y0: e.clientY, moved: false, pos: -1 });
+});
+window.addEventListener('pointermove', e => {
+  const d = layerDrag; if (!d.row) return;
+  if (!d.moved && Math.abs(e.clientY - d.y0) < 5) return;
+  if (!d.moved) { d.moved = true; d.row.classList.add('opacity-50'); $('#layerList').appendChild(layerLine); layerLine.classList.remove('hidden'); document.body.style.cursor = 'grabbing'; }
+  e.preventDefault();
+  // the gap the pointer is nearest to: before row p (p = rows.length → after the last)
+  const rows = layerRows(), list = $('#layerList').getBoundingClientRect();
+  let p = rows.length;
+  for (let i = 0; i < rows.length; i++) { const r = rows[i].getBoundingClientRect(); if (e.clientY < r.top + r.height / 2) { p = i; break; } }
+  d.pos = p;
+  const ref = rows[p] || rows[rows.length - 1], rr = ref.getBoundingClientRect();
+  layerLine.style.top = ((rows[p] ? rr.top : rr.bottom) - list.top - 1) + 'px';
+  // keep scrolling when dragged to the edge of the panel
+  const sc = $('#layerList').closest('.overflow-y-auto'); if (sc) { const b = sc.getBoundingClientRect(); if (e.clientY < b.top + 30) sc.scrollTop -= 8; else if (e.clientY > b.bottom - 30) sc.scrollTop += 8; }
+});
+window.addEventListener('pointerup', () => {
+  const d = layerDrag; if (!d.row) return;
+  const row = d.row; d.row = null;
+  layerLine.classList.add('hidden'); row.classList.remove('opacity-50'); document.body.style.cursor = '';
+  if (!d.moved) return;
+  setTimeout(() => { d.moved = false; }, 0);
+  const objs = canvas.getObjects(), o = objs[+row.dataset.li]; if (!o || d.pos < 0) return;
+  // the list without the dragged row, top first; the row goes in at the gap it was dropped on
+  const order = layerRows().map(r => objs[+r.dataset.li]);
+  const from = order.indexOf(o), p = d.pos > from ? d.pos - 1 : d.pos;
+  if (p === from) return;
+  order.splice(from, 1); order.splice(p, 0, o);
+  const bgCount = objs.filter(x => x.role === 'bg').length;
+  canvas.moveTo(o, bgCount + (order.length - 1 - p));
+  pickFromLayers(o);
+  markDirty(o); saveHistory(); refreshLayers();
 });
 
 /* ==========================================================
