@@ -1302,7 +1302,9 @@ fabric.Text.prototype._setTextStyles = function (ctx, charStyle, forMeasuring) {
 const canvas = new fabric.Canvas('editor', {
   preserveObjectStacking: true, backgroundColor: '',
   selectionColor: 'rgba(200,255,46,0.08)', selectionBorderColor: '#c8ff2e', selectionLineWidth: 1,
-  altSelectionKey: 'altKey', targetFindTolerance: 6
+  altSelectionKey: 'altKey', targetFindTolerance: 6,
+  // the selection frame and handles are drawn after the artboard clip, so they show outside it too
+  controlsAboveOverlay: true
 });
 
 const FONT_LOADS = ['400 20px "Bebas Neue"', '400 20px Anton', '500 20px Oswald', '700 20px Oswald', '800 20px Montserrat', '900 20px Montserrat', 'italic 900 20px Montserrat',
