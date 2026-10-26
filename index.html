@@ -1263,7 +1263,7 @@ const RATIOS = { '1:1': [1080, 1080], '4:5': [1080, 1350], '9:16': [1080, 1920] 
 const MAX_SLIDES = 10;
 const PROPS = ['name', 'role', 'fx', 'fullBleed', 'filled', 'locked', 'selectable', 'evented', 'hasControls',
   'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'perPixelTargetFind', 'splitByGrapheme',
-  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind', 'scorerBox'];
+  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind', 'scorerBox', 'noWrap', 'fitBase'];
 const BADGE_COLORS = ['bg-accent/15 text-accent', 'bg-sky/15 text-sky', 'bg-amber-400/15 text-amber-300', 'bg-violet-400/15 text-violet-300', 'bg-hot/15 text-hot', 'bg-emerald-400/15 text-emerald-300', 'bg-orange-400/15 text-orange-300', 'bg-pink-400/15 text-pink-300'];
 const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇', scorers: "Raise Nakagawa 1'\nEito Watanabe 4'\nTsukasa Nishikawa 12'" };
 /* post-info fields; the user can add their own (key c_…). Labels double as {placeholder} names. */
@@ -1569,10 +1569,20 @@ canvas.on('object:removed', e => { if (!HIST.lock) { markDirty(e.target); saveHi
 canvas.on('object:modified', e => {
   const t = e.target;
   if (t && t.type === 'image') t.fullBleed = false;
+  fitNoWrap(t); // a no-wrap box made narrower or wider
   markDirty(t); saveHistory(); refreshLayersSoon(); syncPropsLive();
 });
-canvas.on('text:changed', e => { fitScorer(e.target); textEdited(e.target); markDirty(e.target); saveHistory(); refreshLayersSoon(); const ta = $('#props [data-k="text"]'); if (ta && document.activeElement !== ta) ta.value = e.target.text; });
+canvas.on('text:changed', e => { fitScorer(e.target); fitNoWrap(e.target); textEdited(e.target); markDirty(e.target); saveHistory(); refreshLayersSoon(); const ta = $('#props [data-k="text"]'); if (ta && document.activeElement !== ta) ta.value = e.target.text; });
 /* a hand-edited text keeps its {placeholders} only if it still has some (filled on 「反映」) */
+/* "no wrap" text: one line per line of text; when it is longer than the box, the letters shrink
+   (never above fitBase, the size it was set to) */
+function fitNoWrap(o) {
+  if (!o || o.type !== 'textbox' || !o.noWrap) return;
+  const base = o.fitBase || o.fontSize;
+  const w = new fabric.Text(o.text || ' ', { fontFamily: o.fontFamily, fontWeight: o.fontWeight, fontStyle: o.fontStyle, charSpacing: o.charSpacing, fontSize: base }).width;
+  o.set('fontSize', Math.max(4, Math.min(base, base * (o.width - 2) / Math.max(1, w))));
+  o.initDimensions(); o.setCoords();
+}
 function textEdited(o) { if (o && CUR.kind === 'post') o.tpl = hasPlaceholder(o.text) ? o.text : null; }
 canvas.on('selection:created', onSel);
 canvas.on('selection:updated', onSel);
@@ -1870,7 +1880,7 @@ function photoFrame({ W, H, t, i, k }, title, size = 138) {
   o.push(bar(W * 0.84, H * 0.83, W * 0.17, 13 * k, PH.blue));
   o.push(bar(W * 0.885, H * 0.896, W * 0.12, 9 * k, PH.red));
   o.push(bar(W * 0.945, H * 0.925, W * 0.06, 9 * k, PH.blue));
-  o.push(T(`${i.date}  ${i.opponent} vs ${t.name}`, { left: W * 0.94, top: H * 0.43, width: H * 0.42, angle: 90, fontFamily: 'Oswald', fontWeight: 500, fontSize: 24 * k, fill: 'rgba(255,255,255,0.85)', charSpacing: 160, name: '縦の試合情報' }));
+  o.push(T(`${i.date}  ${i.opponent} vs ${t.name}`, { left: W * 0.94, top: H * 0.43, width: H * 0.42, angle: 90, fontFamily: 'Oswald', fontWeight: 500, fontSize: 24 * k, fill: 'rgba(255,255,255,0.85)', charSpacing: 160, noWrap: true, fitBase: 24 * k, name: '縦の試合情報' }));
   // white lines: the left one meets the title low, the right one leaves it high (as on the card)
   const tw = new fabric.Text(title, { fontFamily: 'Anton', fontSize: fs, charSpacing: 10 }).width;
   const gap = 18 * k, lineH = 5 * k;
@@ -1978,7 +1988,7 @@ const hasPlaceholder = t => /\{[^{}\n]+\}/.test(t || '');
 function fillTplTexts() {
   let n = 0;
   canvas.getObjects().forEach(o => {
-    if (o.type === 'textbox' && o.tpl) { o.set('text', fillInfo(o.tpl)); o.initDimensions(); o.setCoords(); n++; }
+    if (o.type === 'textbox' && o.tpl) { o.set('text', fillInfo(o.tpl)); o.initDimensions(); fitNoWrap(o); o.setCoords(); n++; }
   });
   canvas.requestRenderAll();
   return n;
@@ -2016,7 +2026,7 @@ async function applyPreset(key, opts = {}) {
   const objs = Array.isArray(res) ? res : res.objects;
   markInfoTexts(p, objs, k);
   kept.forEach(img => { if (img.fullBleed) coverImage(img); canvas.add(img); });
-  objs.forEach(o => canvas.add(o));
+  objs.forEach(o => { canvas.add(o); fitNoWrap(o); });
   if (kept.some(img => img.fullBleed)) removePhotoPlaceholders();
   refillSlots(kept);
   const loose = kept.filter(img => !img.fullBleed && !img.inSlot);
@@ -2668,7 +2678,8 @@ function textPropsHTML(o) {
       `<div class="grid grid-cols-2 gap-2">${C.select('fontWeight', '太さ', [[400, 'Regular'], [500, 'Medium'], [700, 'Bold'], [800, 'ExtraBold'], [900, 'Black']], o.fontWeight)}
        <div class="ctl"><span class="ctl-l">スタイル</span>${C.seg([['italic', '<i class="fa-solid fa-italic"></i>', o.fontStyle === 'italic'], ['under', '<i class="fa-solid fa-underline"></i>', o.underline]])}</div></div>`) +
     C.sec('fa-text-height', 'サイズ・配置',
-      C.range('fontSize', '文字サイズ', 10, 500, 1, Math.round(o.fontSize), 'px') +
+      C.range('fontSize', o.noWrap ? '文字サイズ（最大）' : '文字サイズ', 10, 500, 1, Math.round(o.noWrap ? (o.fitBase || o.fontSize) : o.fontSize), 'px') +
+      C.toggle('noWrap', '折り返さない（入りきらない時は文字を自動で縮小）', o.noWrap) +
       C.range('charSpacing', '字間', -100, 1000, 10, o.charSpacing) +
       C.range('lineHeight', '行間', 0.6, 2.5, 0.05, r2(o.lineHeight)) +
       `<div class="ctl"><span class="ctl-l">揃え</span>${C.seg([['align:left', '<i class="fa-solid fa-align-left"></i>', o.textAlign === 'left'], ['align:center', '<i class="fa-solid fa-align-center"></i>', o.textAlign === 'center'], ['align:right', '<i class="fa-solid fa-align-right"></i>', o.textAlign === 'right']])}</div>`) +
@@ -2759,10 +2770,11 @@ function setProp(k, v) {
   const ensureShadow = () => { if (!o.shadow) o.set('shadow', sh('rgba(0,0,0,0.6)', 20, 0, 6)); return o.shadow; };
   if (k === 'slotKind') { setSlotKind(o, v); return; }
   switch (k) {
-    case 'text': o.set('text', v); textEdited(o); refreshLayersSoon(); break;
+    case 'text': o.set('text', v); textEdited(o); fitNoWrap(o); refreshLayersSoon(); break;
     case 'fontFamily': o.set('fontFamily', v); break;
     case 'fontWeight': o.set('fontWeight', +v); break;
-    case 'fontSize': o.set('fontSize', +v); break;
+    case 'fontSize': o.set('fontSize', +v); if (o.noWrap) { o.fitBase = +v; fitNoWrap(o); } break;
+    case 'noWrap': o.noWrap = !!v; if (v) { o.fitBase = o.fontSize; fitNoWrap(o); } else if (o.fitBase) { o.set('fontSize', o.fitBase); o.initDimensions(); } renderProps(); break;
     case 'charSpacing': o.set('charSpacing', +v); break;
     case 'lineHeight': o.set('lineHeight', +v); break;
     case 'fill': o.set('fill', v); break;
