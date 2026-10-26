@@ -1226,7 +1226,7 @@ const RATIOS = { '1:1': [1080, 1080], '4:5': [1080, 1350], '9:16': [1080, 1920] 
 const MAX_SLIDES = 10;
 const PROPS = ['name', 'role', 'fx', 'fullBleed', 'filled', 'locked', 'selectable', 'evented', 'hasControls',
   'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'perPixelTargetFind', 'splitByGrapheme',
-  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind'];
+  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind', 'scorerBox'];
 const BADGE_COLORS = ['bg-accent/15 text-accent', 'bg-sky/15 text-sky', 'bg-amber-400/15 text-amber-300', 'bg-violet-400/15 text-violet-300', 'bg-hot/15 text-hot', 'bg-emerald-400/15 text-emerald-300', 'bg-orange-400/15 text-orange-300', 'bg-pink-400/15 text-pink-300'];
 const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇', scorers: "Raise Nakagawa 1', Eito Watanabe 4', Tsukasa Nishikawa 12'" };
 /* post-info fields; the user can add their own (key c_…). Labels double as {placeholder} names. */
@@ -1490,7 +1490,7 @@ canvas.on('object:modified', e => {
   if (t && t.type === 'image') t.fullBleed = false;
   markDirty(t); saveHistory(); refreshLayersSoon(); syncPropsLive();
 });
-canvas.on('text:changed', e => { textEdited(e.target); markDirty(e.target); saveHistory(); refreshLayersSoon(); const ta = $('#props [data-k="text"]'); if (ta && document.activeElement !== ta) ta.value = e.target.text; });
+canvas.on('text:changed', e => { fitScorer(e.target); textEdited(e.target); markDirty(e.target); saveHistory(); refreshLayersSoon(); const ta = $('#props [data-k="text"]'); if (ta && document.activeElement !== ta) ta.value = e.target.text; });
 /* a hand-edited text keeps its {placeholders} only if it still has some (filled on 「反映」) */
 function textEdited(o) { if (o && CUR.kind === 'post') o.tpl = hasPlaceholder(o.text) ? o.text : null; }
 canvas.on('selection:created', onSel);
@@ -1668,7 +1668,7 @@ const PRESETS = {
       // the scorers start under the own team's score (the right number)
       const measure = str => new fabric.Text(str, { fontFamily: 'Anton', fontSize: sfs, charSpacing: 40 }).width;
       const xUs = W / 2 - measure(score) / 2 + measure(`${i.scoreThem} - `);
-      o.push(...scorerTexts(ctx, String(i.scorers || '').split(/\s*[,、，\/／\n]\s*/).filter(Boolean), { x: xUs, top: y + 4 * k + sfs * 0.4 + 10 * k }));
+      o.push(...scorerTexts(ctx, splitScorers(i.scorers), { x: xUs, top: y + 4 * k + sfs * 0.4 + 10 * k }));
       return o.concat(logoSlot(ctx));
     }
   },
@@ -1773,21 +1773,50 @@ function photoFrame({ W, H, t, i, k }, title, size = 138) {
   return o;
 }
 /* goal scorers, from under the own score to the right edge: the layout (1-3 columns) that gives
-   the biggest letters wins, so about 15 names still fit */
-function scorerTexts({ W, H, k }, names, { x, top }) {
-  const right = W * 0.965, bottom = H * 0.99, lh = 1.3, base = 21 * k;
-  const width = right - x, height = bottom - top;
-  if (!names.length) return [T(' ', { originX: 'left', originY: 'top', left: x, top, width, textAlign: 'left', fontFamily: 'Oswald', fontWeight: 500, fontSize: base, name: '得点者' })];
+   the biggest letters wins, so about 15 names still fit. Each text remembers its box (scorerBox)
+   so it can be laid out again when the names change. */
+const SCORER_LH = 1.3;
+const splitScorers = v => String(v || '').split(/\s*[,、，\/／\n]\s*/).filter(Boolean);
+function scorerTexts({ W, H, k }, names, { x, top, bottom = H * 0.965, right = W * 0.965, base = 21 * k }) {
+  const box = { x, top, bottom, right, base };
+  const width = right - x, height = bottom - top, lh = SCORER_LH;
+  const style = { originX: 'left', originY: 'top', textAlign: 'left', fontFamily: 'Oswald', fontWeight: 500, lineHeight: lh, scorerBox: box };
+  if (!names.length) return [T(' ', { ...style, left: x, top, width, fontSize: base, name: '得点者' })];
   const ratio = Math.max(...names.map(n => new fabric.Text(n, { fontFamily: 'Oswald', fontWeight: 500, fontSize: 100 }).width / 100));
+  // fabric's line box is fontSize × lineHeight × 1.13
+  const lineH = lh * fabric.Text.prototype._fontSizeMult;
   const best = [1, 2, 3].map(cols => {
     const rows = Math.ceil(names.length / cols), colW = width / cols;
-    return { cols, rows, colW, size: Math.min(base, height / (rows * lh), (colW - 10) / ratio) };
+    return { cols, rows, colW, size: Math.min(base, height / (rows * lineH), (colW - 10) / ratio) };
   }).sort((p, q) => q.size - p.size || p.cols - q.cols)[0];
-  const size = Math.max(8, best.size);
-  return Array.from({ length: best.cols }, (_, c) => names.slice(c * best.rows, (c + 1) * best.rows)).filter(col => col.length).map((col, c) => T(col.join('\n'), {
-    originX: 'left', originY: 'top', left: x + c * best.colW, top, width: best.colW - 6, textAlign: 'left',
-    fontFamily: 'Oswald', fontWeight: 500, fontSize: size, lineHeight: lh, name: best.cols > 1 ? `得点者 ${c + 1}` : '得点者',
+  const build = size => Array.from({ length: best.cols }, (_, c) => names.slice(c * best.rows, (c + 1) * best.rows)).filter(col => col.length).map((col, c) => T(col.join('\n'), {
+    ...style, left: x + c * best.colW, top, width: best.colW - 6, fontSize: size, name: best.cols > 1 ? `得点者 ${c + 1}` : '得点者',
   }));
+  // measured, not estimated: shrink until every column ends inside the box
+  let size = Math.max(6, Math.floor(best.size * 2) / 2), out = build(size);
+  while (size > 6 && out.some(t => t.height > height)) { size -= 0.5; out = build(size); }
+  return out;
+}
+/* the post info's scorers changed: lay the scorer texts out again in their box, keeping their look */
+function refreshScorers() {
+  const olds = canvas.getObjects().filter(o => o.scorerBox);
+  if (!olds.length) return false;
+  const first = olds[0], idx = canvas.getObjects().indexOf(first);
+  const look = { fill: first.fill, fontFamily: first.fontFamily, fontWeight: first.fontWeight, fontStyle: first.fontStyle, shadow: first.shadow, charSpacing: first.charSpacing, fromPreset: first.fromPreset };
+  const fresh = scorerTexts({ W: S.W, H: S.H, k: S.W / 1080 }, splitScorers(S.info.scorers), first.scorerBox);
+  HIST.lock = true;
+  olds.forEach(o => canvas.remove(o));
+  fresh.forEach((t, n) => { t.set(look); t.initDimensions(); fitScorer(t); canvas.insertAt(t, idx + n); });
+  HIST.lock = false;
+  canvas.requestRenderAll(); saveHistory(); refreshLayersSoon();
+  return true;
+}
+/* typed straight into a scorer text (or a taller font): shrink it so it stays inside its box */
+function fitScorer(t) {
+  const b = t && t.scorerBox; if (!b) return;
+  const room = b.bottom - t.top;
+  while (t.fontSize > 6 && t.height * (t.scaleY || 1) > room) { t.set('fontSize', t.fontSize - 0.5); t.initDimensions(); }
+  t.setCoords();
 }
 /* an empty slot: dashed ring + label; filled by uploading while it is selected (or in order) */
 function emblemSlot(x, y, r, id, label) {
@@ -2982,10 +3011,12 @@ function renderInfoFields() {
   $('#placeholderChips').innerHTML = placeholderList().map(p => `<span class="chip" data-ph="${esc(p.label)}" title="選択中のテキストに挿入">{${esc(p.label)}}</span>`).join('');
 }
 const fillInfoInputs = renderInfoFields;
+let scorerT = null;
 $('#infoFields').addEventListener('input', e => {
   const k = e.target.dataset.info; if (!k) return;
   S.info[k] = e.target.value; store.set('info', S.info);
   if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
+  if (k === 'scorers') { clearTimeout(scorerT); scorerT = setTimeout(refreshScorers, 300); }
   updatePreviewMeta();
 });
 $('#infoFields').addEventListener('click', e => {
@@ -3026,7 +3057,7 @@ $('#btnReapply').addEventListener('click', async () => {
       await applyPreset(key, { caption: false });
     }
   }
-  const n = fillTplTexts();
+  const n = fillTplTexts() + (refreshScorers() ? 1 : 0);
   if (n) { markDirty({}); saveHistory(); }
   if (!key && !n) return toast('このスライドには差し込み項目（{ }）のある文字がありません', 'fa-circle-info', 'text-sky', 3500);
   if (CUR.kind === 'post') insertTemplate(true);
