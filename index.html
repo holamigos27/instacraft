@@ -2222,10 +2222,47 @@ $('#fileInput').addEventListener('change', e => { handleFiles(e.target.files); e
 $('#quickStage').addEventListener('drop', e => handleFiles(e.dataTransfer.files));
 $('#dropZone').addEventListener('drop', e => handleFiles(e.dataTransfer.files));
 document.addEventListener('paste', e => {
-  if (!CUR.post || S.tab !== 'quick') return;
+  if (!CUR.post || S.tab !== 'quick' || $('.modal.open')) return;
   const files = [...(e.clipboardData?.items || [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile());
-  if (files.length) { e.preventDefault(); handleFiles(files); }
+  if (files.length) { e.preventDefault(); handleFiles(files); return; }
+  // otherwise: what was copied on the canvas (not while typing in a field or a text)
+  const el = document.activeElement, typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el?.tagName) || el?.isContentEditable;
+  if (!typing && !canvas.getActiveObject()?.isEditing && OBJ_CLIP.obj) { e.preventDefault(); pasteSelection(); }
 });
+
+/* ---------------- copy / cut / paste / select all (canvas objects) ---------------- */
+const OBJ_CLIP = { obj: null, n: 0 };
+function copySelection(cut = false) {
+  const o = canvas.getActiveObject(); if (!o || o.role === 'bg') return;
+  o.clone(cl => {
+    OBJ_CLIP.obj = cl; OBJ_CLIP.n = 0;
+    if (cut) { canvas.getActiveObjects().forEach(x => canvas.remove(x)); canvas.discardActiveObject(); canvas.requestRenderAll(); saveHistory(); refreshLayersSoon(); }
+    toast(cut ? '切り取りました（Ctrl+V で貼り付け）' : 'コピーしました（Ctrl+V で貼り付け）', cut ? 'fa-scissors' : 'fa-copy');
+  }, PROPS);
+}
+function pasteSelection() {
+  OBJ_CLIP.obj.clone(cl => {
+    const off = 30 * ++OBJ_CLIP.n;
+    canvas.discardActiveObject();
+    cl.set({ left: cl.left + off, top: cl.top + off, evented: true });
+    // a pasted copy is a new object: it does not belong to a slot, and a copied frame gets its own id
+    const fresh = x => {
+      x.fullBleed = false; delete x.inSlot;
+      if (x.role === 'slot') { x.slotId = (x.slotKind || 'slot') + '-' + uid().slice(-6); x.filled = false; }
+      if (x.type === 'image' && x.fx) applyFx(x);
+    };
+    if (cl.type === 'activeSelection') { cl.canvas = canvas; cl.forEachObject(x => { fresh(x); canvas.add(x); }); cl.setCoords(); }
+    else { fresh(cl); canvas.add(cl); }
+    canvas.setActiveObject(cl); canvas.requestRenderAll(); saveHistory(); refreshLayersSoon();
+  }, PROPS);
+}
+function selectAllObjects() {
+  const objs = canvas.getObjects().filter(o => o.role !== 'bg' && o.visible !== false && o.selectable !== false && o.evented !== false);
+  if (!objs.length) return;
+  canvas.discardActiveObject();
+  canvas.setActiveObject(objs.length === 1 ? objs[0] : new fabric.ActiveSelection(objs, { canvas }));
+  canvas.requestRenderAll();
+}
 
 /* ---------------- image filters ---------------- */
 const FX_PRESETS = {
@@ -4703,6 +4740,10 @@ document.addEventListener('keydown', e => {
   if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
   if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); objOp('dup'); return; }
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); savePostNow(); toast('保存しました', 'fa-floppy-disk'); return; }
+  if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAllObjects(); return; }
+  if (mod && e.key.toLowerCase() === 'c' && o) { e.preventDefault(); copySelection(); return; }
+  if (mod && e.key.toLowerCase() === 'x' && o) { e.preventDefault(); copySelection(true); return; }
+  // Ctrl+V arrives as a paste event (so an image copied from elsewhere still wins)
   if (!o) return;
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); objOp('del'); return; }
   const step = e.shiftKey ? 10 : 1;
