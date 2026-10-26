@@ -60,9 +60,14 @@
 
   /* views */
   body.view-home .only-editor, body.view-editor .only-home { display: none !important; }
-  #viewEditor { grid-template-columns: var(--lw, 320px) minmax(0,1fr) var(--rw, 360px); }
-  body.left-off #leftAside, body.right-off #rightAside { overflow: hidden; border: 0; }
-  body.left-off #leftAside > *, body.right-off #rightAside > * { visibility: hidden; }
+  /* side panels float over the canvas area, so opening/closing them never resizes it */
+  .side-panel { position:absolute; top:0; bottom:0; z-index:30; transition: transform .2s ease; box-shadow: 0 0 30px rgba(0,0,0,.45); }
+  #leftAside { left:0; width: var(--lw, 320px); }
+  #rightAside { right:0; width: var(--rw, 360px); }
+  body.left-off #leftAside { transform: translateX(-100%); box-shadow:none; }
+  body.right-off #rightAside { transform: translateX(100%); box-shadow:none; }
+  /* the slide strip at the bottom keeps clear of open panels (the canvas does not move) */
+  #propPanel { padding-left: var(--lpad, 0px); padding-right: var(--rpad, 0px); transition: padding .2s ease; }
   body.resizing, body.resizing * { cursor: inherit !important; user-select: none !important; }
   body.resizing iframe { pointer-events: none; }
   .vsplit { position:absolute; top:0; bottom:0; width:8px; z-index:25; cursor:col-resize; }
@@ -85,8 +90,8 @@
   .thin-x::-webkit-scrollbar { height: 4px; }
   #centerBar.compact .tab-label, #centerBar.compact .mt-label, #centerBar.tiny #obOpacity, #centerBar.tiny [data-ob^="flip"] { display:none; }
   #centerBar.compact #objTools .w-px, #centerBar.tiny #objTools [data-op="forward"], #centerBar.tiny #objTools [data-op="backward"] { display:none; }
-  body.craft-max #viewEditor { grid-template-columns: minmax(0,1fr) !important; }
-  body.craft-max #viewEditor > aside, body.craft-max #objBar { display: none !important; }
+  body.craft-max .side-panel { transform: translateX(-100%); }
+  body.craft-max #rightAside { transform: translateX(100%); }
 
   input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 4px; background: #2a3140; outline: none; }
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #c8ff2e; border: 2px solid #08090d; cursor: pointer; box-shadow: 0 0 0 3px rgba(200,255,46,.15); }
@@ -285,346 +290,350 @@
 </section>
 
 <!-- ============ EDITOR ============ -->
-<main id="viewEditor" class="only-editor grid h-[calc(100vh-56px)]">
+<main id="viewEditor" class="only-editor flex flex-col h-[calc(100vh-56px)]">
 
-  <!-- LEFT -->
-  <aside class="relative bg-panel border-r border-line flex flex-col min-h-0" id="leftAside">
-    <div class="vsplit right" id="splitLeft" title="ドラッグで幅を変更（ダブルクリックで畳む）"></div>
-    <nav class="flex border-b border-line" id="leftTabs">
-      <button class="ltab active" data-tab="tpl" title="デザインプリセット・チーム設定"><i class="fa-solid fa-wand-magic-sparkles"></i>デザイン</button>
-      <button class="ltab" data-tab="info" title="投稿情報（デザインに差し込む文字）"><i class="fa-solid fa-clipboard-list"></i>投稿情報</button>
-      <button class="ltab" data-tab="asset" title="画像・図形・バッジ"><i class="fa-solid fa-shapes"></i>素材</button>
-      <button class="ltab" data-tab="text" title="テキストを追加"><i class="fa-solid fa-font"></i>テキスト</button>
-      <button class="ltab" data-tab="bg" title="背景"><i class="fa-solid fa-fill-drip"></i>背景</button>
-      <button class="ltab" data-tab="layer" title="レイヤー"><i class="fa-solid fa-layer-group"></i>レイヤー</button>
-      <button class="ltab" data-tab="props" title="選択中のオブジェクトを編集（操作パネル）"><i class="fa-solid fa-sliders"></i>編集</button>
-    </nav>
-    <div class="flex-1 overflow-y-auto p-4 space-y-5">
+  <!-- TOOLBAR (full width) -->
+  <div class="h-12 flex items-center justify-between gap-3 px-3 border-b border-line bg-panel/60 overflow-x-auto overflow-y-hidden thin-x" id="centerBar">
+    <div class="flex items-center gap-3 min-w-0 flex-1">
+      <button class="icon-btn flex-shrink-0 -mr-1" id="tglLeft" title="左パネルを畳む／開く"><i class="fa-solid fa-angles-left"></i></button>
+      <div class="flex bg-ink border border-line rounded-[10px] p-0.5 flex-shrink-0" id="centerTabs">
+        <button class="mode-tab active" data-ctab="quick" title="クイック編集"><i class="fa-solid fa-bolt"></i><span class="tab-label">クイック編集</span></button>
+        <button class="mode-tab" data-ctab="photocraft" title="PhotoCraft"><i class="fa-solid fa-camera-retro"></i><span class="tab-label">PhotoCraft</span></button>
+        <button class="mode-tab" data-ctab="vectorcraft" title="VectorCraft"><i class="fa-solid fa-bezier-curve"></i><span class="tab-label">VectorCraft</span></button>
+      </div>
+      <div class="flex items-center gap-1 flex-shrink-0 py-1" id="quickTools"></div>
+      <div class="hidden items-center gap-1.5 overflow-x-auto min-w-0 flex-1 py-1" id="craftTools">
+        <button class="mini-btn flex items-center gap-1.5" data-ct="send"><i class="fa-solid fa-file-import text-accent"></i><span>スライド<b class="ctSlide">1</b>を開く</span></button>
+        <button class="mini-btn flex items-center gap-1.5" data-ct="pull" id="ctPull"><i class="fa-solid fa-file-export text-accent"></i>書き出してスライドに反映</button>
+        <span class="text-[11px] text-slate-400 truncate" id="craftHint"></span>
+      </div>
+    </div>
+      <!-- 変形・整列（選択中のオブジェクト） -->
+    <div class="flex items-center gap-0.5 flex-shrink-0 border-l border-line pl-2" id="objBar" title="1つ選択：キャンバス基準 ／ 複数選択：選択範囲基準">
+      <button class="icon-btn !w-7 !h-7" data-ob="al:left" title="左揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M3 2v16"/><rect x="5" y="5" width="11" height="3.5" rx="1"/><rect x="5" y="11.5" width="7" height="3.5" rx="1"/></svg></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:cx" title="左右中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M10 2v16"/><rect x="4" y="5" width="12" height="3.5" rx="1"/><rect x="6" y="11.5" width="8" height="3.5" rx="1"/></svg></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:right" title="右揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M17 2v16"/><rect x="4" y="5" width="11" height="3.5" rx="1"/><rect x="8" y="11.5" width="7" height="3.5" rx="1"/></svg></button>
+      <span class="w-px h-5 bg-line mx-0.5 flex-shrink-0"></span>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:top" title="上揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 3h16"/><rect x="5" y="5" width="3.5" height="11" rx="1"/><rect x="11.5" y="5" width="3.5" height="7" rx="1"/></svg></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:cy" title="上下中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 10h16"/><rect x="5" y="4" width="3.5" height="12" rx="1"/><rect x="11.5" y="6" width="3.5" height="8" rx="1"/></svg></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="al:bottom" title="下揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 17h16"/><rect x="5" y="4" width="3.5" height="11" rx="1"/><rect x="11.5" y="8" width="3.5" height="7" rx="1"/></svg></button>
+      <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
+      <button class="icon-btn !w-7 !h-7" data-ob="flipX" title="左右反転"><i class="fa-solid fa-left-right"></i></button>
+      <button class="icon-btn !w-7 !h-7" data-ob="flipY" title="上下反転"><i class="fa-solid fa-up-down"></i></button>
+      <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
+      <label class="flex items-center gap-1 text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0" title="回転"><i class="fa-solid fa-rotate-right"></i>
+        <input type="number" class="field !w-14 !py-0.5 !px-1.5 text-center" id="obAngle" min="-180" max="180" step="1" value="0">°</label>
+      <button class="icon-btn !w-7 !h-7" data-ob="resetRot" title="回転をリセット"><i class="fa-solid fa-rotate-left"></i></button>
+      <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
+      <label class="flex items-center gap-1.5 text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0" title="不透明度"><i class="fa-solid fa-circle-half-stroke"></i>
+        <input type="range" class="!w-16" id="obOpacity" min="0" max="100" step="1" value="100"><b class="text-slate-200 w-8 tabular-nums ob-out" id="obOpacityOut">100%</b></label>
+    </div>
+    <div class="flex items-center gap-0.5 flex-shrink-0" id="objTools">
+      <button class="icon-btn" data-op="front" title="最前面へ"><i class="fa-solid fa-angles-up"></i></button>
+      <button class="icon-btn" data-op="forward" title="前面へ"><i class="fa-solid fa-angle-up"></i></button>
+      <button class="icon-btn" data-op="backward" title="背面へ"><i class="fa-solid fa-angle-down"></i></button>
+      <button class="icon-btn" data-op="back" title="最背面へ"><i class="fa-solid fa-angles-down"></i></button>
+      <div class="w-px h-5 bg-line mx-1"></div>
+      <button class="icon-btn" data-op="dup" title="複製 (Ctrl+D)"><i class="fa-regular fa-clone"></i></button>
+      <button class="icon-btn" data-op="lock" title="ロック切替"><i class="fa-solid fa-lock"></i></button>
+      <button class="icon-btn hover:!text-hot" data-op="del" title="削除 (Delete)"><i class="fa-regular fa-trash-can"></i></button>
+    </div>
+    <button class="icon-btn hidden flex-shrink-0" id="btnCraftMax" title="エディタを広く表示"><i class="fa-solid fa-expand"></i></button>
+    <div class="w-px h-5 bg-line flex-shrink-0"></div>
+    <button class="icon-btn flex-shrink-0" id="btnLayoutReset" title="パネルの幅・高さ・開閉を初期状態に戻す"><i class="fa-solid fa-table-columns"></i></button>
+    <button class="icon-btn flex-shrink-0 -ml-1" id="tglRight" title="右パネルを畳む／開く"><i class="fa-solid fa-angles-right"></i></button>
+  </div>
 
-      <section data-pane="tpl" class="space-y-5">
-        <div>
-          <div class="sec-title"><i class="fa-solid fa-shield-halved"></i>チーム設定</div>
-          <div class="card space-y-2.5">
-            <div><label class="lbl">チーム名</label><input class="field select-text" id="tmName"></div>
-            <div class="grid grid-cols-2 gap-2">
-              <div><label class="lbl">略称</label><input class="field select-text" id="tmShort" maxlength="4"></div>
-              <div><label class="lbl">アカウント</label>
-                <div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-500">@</span><input class="field pl-5 select-text" id="tmAccount"></div></div>
+
+  <!-- WORK AREA: canvas full width, side panels float over its edges -->
+  <div class="relative flex-1 min-h-0" id="workArea">
+    <!-- CENTER -->
+    <section class="absolute inset-0 flex flex-col min-w-0 min-h-0" id="centerCol">
+      <div id="stage" class="relative flex-1 min-h-0 overflow-hidden">
+        <div id="quickStage" class="absolute inset-0 flex items-center justify-center">
+          <div id="canvasWrap" class="relative"><canvas id="editor"></canvas></div>
+          <div id="dropOverlay" class="absolute inset-3 rounded-2xl border-2 border-dashed border-accent bg-accent/10 items-center justify-center text-accent font-bold pointer-events-none z-10">
+            <div class="text-center"><i class="fa-solid fa-image text-4xl mb-2"></i><div>ドロップして画像を配置</div></div>
+          </div>
+          <div class="absolute bottom-3 flex items-center gap-2 text-[10px] text-slate-500 bg-ink/80 border border-line rounded-md px-2 py-1" style="left:calc(var(--lpad, 0px) + 12px); transition:left .2s ease">
+            <span id="sizeInfo">1080 × 1350</span><span class="text-line">|</span><span id="zoomInfo">100%</span>
+          </div>
+        </div>
+        <div id="craftHost" class="absolute inset-0 hidden">
+          <iframe class="craft-frame hidden" id="frame-photocraft" title="PhotoCraft" allow="fullscreen; clipboard-read; clipboard-write"></iframe>
+          <iframe class="craft-frame hidden" id="frame-vectorcraft" title="VectorCraft" allow="fullscreen; clipboard-read; clipboard-write"></iframe>
+          <div id="craftLoading" class="absolute inset-0 hidden flex-col items-center justify-center gap-3 bg-[#262626] text-slate-300 text-sm">
+            <i class="fa-solid fa-circle-notch fa-spin text-2xl text-accent"></i><span id="craftLoadingText">エディタを読み込み中…</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- slides in posting order -->
+      <div class="relative border-t border-line bg-panel flex flex-col post-only" id="propPanel">
+        <div class="px-4 pt-2 pb-2">
+          <div class="flex items-center justify-between cursor-pointer select-none" id="stripHead" title="クリックで開閉">
+            <div class="text-[11px] font-bold tracking-[0.15em] text-slate-300 flex items-center gap-2">
+              <i class="fa-solid fa-chevron-down text-slate-500 transition-transform" id="stripChevron"></i>
+              <i class="fa-solid fa-images text-accent"></i>投稿する画像
+              <span class="text-slate-500 font-normal tracking-normal">左から順に投稿（ドラッグで並べ替え）</span>
             </div>
-            <div class="grid grid-cols-3 gap-2">
-              <label class="flex items-center gap-1.5 text-[10px] text-slate-400"><input type="color" id="tmPrimary">メイン</label>
-              <label class="flex items-center gap-1.5 text-[10px] text-slate-400"><input type="color" id="tmSecondary">ダーク</label>
-              <label class="flex items-center gap-1.5 text-[10px] text-slate-400"><input type="color" id="tmAccent">アクセント</label>
+            <span class="text-[11px] text-slate-400" id="slideCount">1 / 10枚</span>
+          </div>
+          <div class="flex items-center gap-2 overflow-x-auto pb-1 mt-2" id="slideStrip"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LEFT -->
+    <aside class="side-panel bg-panel border-r border-line flex flex-col min-h-0" id="leftAside">
+      <div class="vsplit right" id="splitLeft" title="ドラッグで幅を変更（ダブルクリックで畳む）"></div>
+      <nav class="flex border-b border-line" id="leftTabs">
+        <button class="ltab active" data-tab="tpl" title="デザインプリセット・チーム設定"><i class="fa-solid fa-wand-magic-sparkles"></i>デザイン</button>
+        <button class="ltab" data-tab="info" title="投稿情報（デザインに差し込む文字）"><i class="fa-solid fa-clipboard-list"></i>投稿情報</button>
+        <button class="ltab" data-tab="asset" title="画像・図形・バッジ"><i class="fa-solid fa-shapes"></i>素材</button>
+        <button class="ltab" data-tab="text" title="テキストを追加"><i class="fa-solid fa-font"></i>テキスト</button>
+        <button class="ltab" data-tab="bg" title="背景"><i class="fa-solid fa-fill-drip"></i>背景</button>
+        <button class="ltab" data-tab="layer" title="レイヤー"><i class="fa-solid fa-layer-group"></i>レイヤー</button>
+        <button class="ltab" data-tab="props" title="選択中のオブジェクトを編集（操作パネル）"><i class="fa-solid fa-sliders"></i>編集</button>
+      </nav>
+      <div class="flex-1 overflow-y-auto p-4 space-y-5">
+
+        <section data-pane="tpl" class="space-y-5">
+          <div>
+            <div class="sec-title"><i class="fa-solid fa-shield-halved"></i>チーム設定</div>
+            <div class="card space-y-2.5">
+              <div><label class="lbl">チーム名</label><input class="field select-text" id="tmName"></div>
+              <div class="grid grid-cols-2 gap-2">
+                <div><label class="lbl">略称</label><input class="field select-text" id="tmShort" maxlength="4"></div>
+                <div><label class="lbl">アカウント</label>
+                  <div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-500">@</span><input class="field pl-5 select-text" id="tmAccount"></div></div>
+              </div>
+              <div class="grid grid-cols-3 gap-2">
+                <label class="flex items-center gap-1.5 text-[10px] text-slate-400"><input type="color" id="tmPrimary">メイン</label>
+                <label class="flex items-center gap-1.5 text-[10px] text-slate-400"><input type="color" id="tmSecondary">ダーク</label>
+                <label class="flex items-center gap-1.5 text-[10px] text-slate-400"><input type="color" id="tmAccent">アクセント</label>
+              </div>
+              <div class="flex flex-wrap gap-1.5" id="paletteChips"></div>
             </div>
-            <div class="flex flex-wrap gap-1.5" id="paletteChips"></div>
           </div>
-        </div>
+          <div>
+            <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-trophy"></i>デザインプリセット</span><span class="text-[9px] tracking-normal normal-case text-slate-500">押すと確認後に適用</span></div>
+            <div class="flex flex-wrap gap-1 mb-2.5" id="presetChips"></div>
+            <div class="grid grid-cols-2 gap-2.5" id="presetGrid"></div>
+            <div class="grid grid-cols-2 gap-1.5 mt-2.5 post-only">
+              <button class="btn !text-[11px] !px-2" id="btnSaveAsPreset" title="表示中のスライドをオリジナルのプリセットとして保存"><i class="fa-solid fa-floppy-disk"></i>スライドを保存</button>
+              <button class="btn !text-[11px] !px-2" id="btnCreatePreset" title="プリセット作成ページを開く"><i class="fa-solid fa-plus"></i>プリセット作成</button>
+            </div>
+            <label class="ctl-row mt-3 text-[11px] post-only"><input type="checkbox" id="linkCaption" checked>投稿タイプ・キャプションも連動</label>
+            <p class="text-[10px] text-slate-500 mt-2 leading-relaxed"><i class="fa-solid fa-circle-info mr-1"></i>アップロード済みの写真は保持され、デザインだけが切り替わります。</p>
+          </div>
+        </section>
+
+        <section data-pane="info" class="space-y-4 hidden">
+          <div>
+            <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-clipboard-list"></i>投稿情報</span><span class="text-[9px] tracking-normal normal-case text-slate-500 post-only">この投稿だけの値</span></div>
+            <div class="grid grid-cols-2 gap-2" id="infoFields"></div>
+            <div class="flex gap-1.5 mt-2.5">
+              <input class="field select-text" id="newFieldLabel" placeholder="項目名（例：MVP選手）">
+              <button class="btn !px-2.5 flex-shrink-0" id="btnAddField"><i class="fa-solid fa-plus"></i>項目を追加</button>
+            </div>
+            <button class="btn btn-accent w-full mt-2.5 post-only" id="btnReapply"><i class="fa-solid fa-arrows-rotate"></i>表示中のスライドに反映</button>
+          </div>
+          <div class="card text-[11px] text-slate-400 leading-relaxed space-y-1.5">
+            <p><i class="fa-solid fa-circle-info text-accent mr-1"></i>テキストの中に <code class="text-accent">{対戦相手}</code> のように<b class="text-slate-200">項目名を { } で囲んで</b>書くと、その部分に投稿情報が入ります。</p>
+            <p>テキストを選択中に下のボタンを押すと、差し込み項目を挿入できます。</p>
+            <div class="flex flex-wrap gap-1 pt-1" id="placeholderChips"></div>
+          </div>
+        </section>
+
+        <section data-pane="asset" class="space-y-5 hidden">
+          <div>
+            <div class="sec-title"><i class="fa-solid fa-image"></i>画像アップロード</div>
+            <label id="dropZone" class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-line rounded-xl py-6 cursor-pointer hover:border-accent/70 hover:bg-accent/[0.03] transition text-center">
+              <i class="fa-solid fa-cloud-arrow-up text-2xl text-accent"></i>
+              <span class="text-xs text-slate-300 font-semibold">クリック or ドラッグ＆ドロップ</span>
+              <span class="text-[10px] text-slate-500">JPG / PNG / WebP ・ Ctrl+V で貼り付けも可</span>
+              <input type="file" id="fileInput" accept="image/*" multiple class="hidden">
+            </label>
+            <label class="ctl-row mt-2 text-[11px]"><input type="checkbox" id="multiToSlides" checked>複数選択時は1枚＝1スライドとして追加</label>
+            <div class="grid grid-cols-4 gap-1.5 mt-2.5" id="gallery"></div>
+          </div>
+          <div>
+            <div class="sec-title"><i class="fa-solid fa-vector-square"></i>基本図形</div>
+            <div class="grid grid-cols-4 gap-1.5">
+              <div class="tile" data-shape="rect"><i class="fa-solid fa-square"></i>四角</div>
+              <div class="tile" data-shape="rounded"><i class="fa-solid fa-square-full rounded"></i>角丸</div>
+              <div class="tile" data-shape="circle"><i class="fa-solid fa-circle"></i>丸</div>
+              <div class="tile" data-shape="triangle"><i class="fa-solid fa-play -rotate-90"></i>三角</div>
+              <div class="tile" data-shape="star"><i class="fa-solid fa-star"></i>星</div>
+              <div class="tile" data-shape="line"><i class="fa-solid fa-minus"></i>ライン</div>
+              <div class="tile" data-shape="frame"><i class="fa-regular fa-square"></i>枠線</div>
+              <div class="tile" data-shape="ring"><i class="fa-regular fa-circle"></i>円枠</div>
+            </div>
+          </div>
+          <div>
+            <div class="sec-title"><i class="fa-solid fa-flag-checkered"></i>チーム風オーバーレイ・リボン</div>
+            <div class="grid grid-cols-3 gap-1.5">
+              <div class="tile" data-shape="ribbon"><i class="fa-solid fa-ribbon"></i>リボン</div>
+              <div class="tile" data-shape="slash"><i class="fa-solid fa-slash"></i>スラッシュ帯</div>
+              <div class="tile" data-shape="stripe"><i class="fa-solid fa-grip-lines-vertical rotate-12"></i>斜めストライプ</div>
+              <div class="tile" data-shape="bottomGrad"><i class="fa-solid fa-circle-half-stroke"></i>下部グラデ</div>
+              <div class="tile" data-shape="dim"><i class="fa-solid fa-moon"></i>暗幕</div>
+              <div class="tile" data-shape="teamTint"><i class="fa-solid fa-droplet"></i>チーム色幕</div>
+              <div class="tile" data-shape="corner"><i class="fa-solid fa-bookmark rotate-45"></i>コーナー</div>
+              <div class="tile" data-shape="scoreboard"><i class="fa-solid fa-table-cells-large"></i>スコア板</div>
+              <div class="tile" data-shape="nameplate"><i class="fa-solid fa-id-badge"></i>選手プレート</div>
+            </div>
+          </div>
+          <div>
+            <div class="sec-title"><i class="fa-solid fa-certificate"></i>バッジ</div>
+            <div class="grid grid-cols-5 gap-1.5">
+              <div class="tile !py-2" data-badge="VS"><span class="font-display text-lg text-accent">VS</span></div>
+              <div class="tile !py-2" data-badge="WIN"><span class="font-display text-lg text-accent">WIN</span></div>
+              <div class="tile !py-2" data-badge="MVP"><span class="font-display text-lg text-accent">MVP</span></div>
+              <div class="tile !py-2" data-badge="NEW"><span class="font-display text-lg text-hot">NEW</span></div>
+              <div class="tile !py-2" data-badge="__TEAM"><i class="fa-solid fa-shield"></i>エンブレム</div>
+            </div>
+          </div>
+        </section>
+
+        <section data-pane="text" class="space-y-5 hidden">
+          <div>
+            <div class="sec-title"><i class="fa-solid fa-plus"></i>テキストを追加</div>
+            <div class="space-y-1.5">
+              <button class="w-full text-left card !py-2.5 hover:border-accent/60 transition" data-text="headline"><span class="font-display text-3xl text-white">HEADLINE</span><span class="block text-[10px] text-slate-500">英字大見出し / Bebas Neue</span></button>
+              <button class="w-full text-left card !py-2.5 hover:border-accent/60 transition" data-text="heading"><span class="text-xl font-black text-white">見出しテキスト</span><span class="block text-[10px] text-slate-500">日本語見出し / Noto Sans JP 900</span></button>
+              <button class="w-full text-left card !py-2.5 hover:border-accent/60 transition" data-text="body"><span class="text-sm text-slate-200">本文テキストを入力</span><span class="block text-[10px] text-slate-500">本文 / 自動折り返し</span></button>
+            </div>
+          </div>
+          <div>
+            <div class="sec-title"><i class="fa-solid fa-palette"></i>スタイル付きテキスト</div>
+            <div class="grid grid-cols-2 gap-1.5">
+              <button class="card !p-2.5 hover:border-accent/60 transition" data-text="italic"><span style="font-family:Montserrat;font-weight:900;font-style:italic" class="text-lg text-white">GAME DAY</span></button>
+              <button class="card !p-2.5 hover:border-accent/60 transition" data-text="outline"><span style="font-family:Anton;-webkit-text-stroke:1px #fff;color:transparent" class="text-xl">OUTLINE</span></button>
+              <button class="card !p-2.5 hover:border-accent/60 transition" data-text="neon"><span class="font-display text-2xl text-accent" style="text-shadow:0 0 12px #c8ff2e">NEON</span></button>
+              <button class="card !p-2.5 hover:border-accent/60 transition" data-text="label"><span style="font-family:Oswald;font-weight:700" class="text-xs bg-accent text-ink px-2 py-0.5">LABEL TAG</span></button>
+              <button class="card !p-2.5 hover:border-accent/60 transition" data-text="score"><span class="font-display text-2xl text-white">3 - 1</span></button>
+              <button class="card !p-2.5 hover:border-accent/60 transition" data-text="player"><span style="font-family:Oswald;font-weight:700" class="text-sm text-white">#10 YAMADA</span></button>
+              <button class="card !p-2.5 hover:border-accent/60 transition" data-text="date"><span style="font-family:Oswald;font-weight:700" class="text-sm text-white">11.03 SUN</span></button>
+              <button class="card !p-2.5 hover:border-accent/60 transition" data-text="jpShadow"><span class="text-sm font-black text-white" style="text-shadow:3px 3px 0 #ff3b5c">必勝！</span></button>
+            </div>
+          </div>
+          <p class="text-[10px] text-slate-500 leading-relaxed"><i class="fa-solid fa-keyboard mr-1"></i>キャンバス上のテキストをダブルクリックで直接編集できます。</p>
+        </section>
+
+        <section data-pane="bg" class="space-y-5 hidden">
+          <div><div class="sec-title"><i class="fa-solid fa-swatchbook"></i>グラデーション</div><div class="grid grid-cols-4 gap-2" id="bgGrads"></div></div>
+          <div><div class="sec-title"><i class="fa-solid fa-square"></i>単色</div><div class="grid grid-cols-8 gap-1.5" id="bgSolids"></div></div>
+          <div><div class="sec-title"><i class="fa-solid fa-sliders"></i>カスタム</div><div class="card space-y-3" id="bgCustom"></div></div>
+        </section>
+
+        <section data-pane="layer" class="hidden">
+          <div class="sec-title"><i class="fa-solid fa-layer-group"></i>レイヤー（上が前面）</div>
+          <div id="layerList" class="space-y-0.5"></div>
+          <p class="text-[10px] text-slate-500 mt-3 leading-relaxed"><i class="fa-solid fa-circle-info mr-1"></i>重なって選択しにくいオブジェクトはここから選択。Alt+クリックで背面の選択中オブジェクトを掴んだまま操作できます。</p>
+        </section>
+
+        <section data-pane="props" class="hidden">
+          <div class="sec-title"><i class="fa-solid fa-sliders"></i>操作パネル<span class="text-slate-500 font-normal tracking-normal normal-case" id="propTitle">— 背景</span></div>
+          <div id="props" class="flex flex-col gap-2.5"></div>
+        </section>
+      </div>
+    </aside>
+
+    <!-- RIGHT -->
+    <aside class="side-panel bg-panel border-l border-line flex flex-col min-h-0" id="rightAside">
+      <div class="vsplit left" id="splitRight" title="ドラッグで幅を変更（ダブルクリックで畳む）"></div>
+      <div class="flex-1 overflow-y-auto p-4 space-y-5">
         <div>
-          <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-trophy"></i>デザインプリセット</span><span class="text-[9px] tracking-normal normal-case text-slate-500">押すと確認後に適用</span></div>
-          <div class="flex flex-wrap gap-1 mb-2.5" id="presetChips"></div>
-          <div class="grid grid-cols-2 gap-2.5" id="presetGrid"></div>
-          <div class="grid grid-cols-2 gap-1.5 mt-2.5 post-only">
-            <button class="btn !text-[11px] !px-2" id="btnSaveAsPreset" title="表示中のスライドをオリジナルのプリセットとして保存"><i class="fa-solid fa-floppy-disk"></i>スライドを保存</button>
-            <button class="btn !text-[11px] !px-2" id="btnCreatePreset" title="プリセット作成ページを開く"><i class="fa-solid fa-plus"></i>プリセット作成</button>
+          <div class="sec-title"><i class="fa-solid fa-crop-simple"></i>サイズ</div>
+          <div class="grid grid-cols-3 gap-1 bg-ink border border-line rounded-xl p-1" id="ratioBtns">
+            <button class="ratio-btn justify-center !px-1" data-ratio="1:1"><span class="shape w-3.5 h-3.5"></span>1:1</button>
+            <button class="ratio-btn justify-center !px-1" data-ratio="4:5"><span class="shape w-3 h-3.5"></span>4:5</button>
+            <button class="ratio-btn justify-center !px-1" data-ratio="9:16"><span class="shape w-2.5 h-4"></span>9:16</button>
           </div>
-          <label class="ctl-row mt-3 text-[11px] post-only"><input type="checkbox" id="linkCaption" checked>投稿タイプ・キャプションも連動</label>
-          <p class="text-[10px] text-slate-500 mt-2 leading-relaxed"><i class="fa-solid fa-circle-info mr-1"></i>アップロード済みの写真は保持され、デザインだけが切り替わります。</p>
+          <p class="text-[10px] text-slate-500 mt-1.5" id="ratioNote">正方形 / フィード / ストーリーズ</p>
         </div>
-      </section>
 
-      <section data-pane="info" class="space-y-4 hidden">
-        <div>
-          <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-clipboard-list"></i>投稿情報</span><span class="text-[9px] tracking-normal normal-case text-slate-500 post-only">この投稿だけの値</span></div>
-          <div class="grid grid-cols-2 gap-2" id="infoFields"></div>
-          <div class="flex gap-1.5 mt-2.5">
-            <input class="field select-text" id="newFieldLabel" placeholder="項目名（例：MVP選手）">
-            <button class="btn !px-2.5 flex-shrink-0" id="btnAddField"><i class="fa-solid fa-plus"></i>項目を追加</button>
-          </div>
-          <button class="btn btn-accent w-full mt-2.5 post-only" id="btnReapply"><i class="fa-solid fa-arrows-rotate"></i>表示中のスライドに反映</button>
-        </div>
-        <div class="card text-[11px] text-slate-400 leading-relaxed space-y-1.5">
-          <p><i class="fa-solid fa-circle-info text-accent mr-1"></i>テキストの中に <code class="text-accent">{対戦相手}</code> のように<b class="text-slate-200">項目名を { } で囲んで</b>書くと、その部分に投稿情報が入ります。</p>
-          <p>テキストを選択中に下のボタンを押すと、差し込み項目を挿入できます。</p>
-          <div class="flex flex-wrap gap-1 pt-1" id="placeholderChips"></div>
-        </div>
-      </section>
-
-      <section data-pane="asset" class="space-y-5 hidden">
-        <div>
-          <div class="sec-title"><i class="fa-solid fa-image"></i>画像アップロード</div>
-          <label id="dropZone" class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-line rounded-xl py-6 cursor-pointer hover:border-accent/70 hover:bg-accent/[0.03] transition text-center">
-            <i class="fa-solid fa-cloud-arrow-up text-2xl text-accent"></i>
-            <span class="text-xs text-slate-300 font-semibold">クリック or ドラッグ＆ドロップ</span>
-            <span class="text-[10px] text-slate-500">JPG / PNG / WebP ・ Ctrl+V で貼り付けも可</span>
-            <input type="file" id="fileInput" accept="image/*" multiple class="hidden">
-          </label>
-          <label class="ctl-row mt-2 text-[11px]"><input type="checkbox" id="multiToSlides" checked>複数選択時は1枚＝1スライドとして追加</label>
-          <div class="grid grid-cols-4 gap-1.5 mt-2.5" id="gallery"></div>
-        </div>
-        <div>
-          <div class="sec-title"><i class="fa-solid fa-vector-square"></i>基本図形</div>
-          <div class="grid grid-cols-4 gap-1.5">
-            <div class="tile" data-shape="rect"><i class="fa-solid fa-square"></i>四角</div>
-            <div class="tile" data-shape="rounded"><i class="fa-solid fa-square-full rounded"></i>角丸</div>
-            <div class="tile" data-shape="circle"><i class="fa-solid fa-circle"></i>丸</div>
-            <div class="tile" data-shape="triangle"><i class="fa-solid fa-play -rotate-90"></i>三角</div>
-            <div class="tile" data-shape="star"><i class="fa-solid fa-star"></i>星</div>
-            <div class="tile" data-shape="line"><i class="fa-solid fa-minus"></i>ライン</div>
-            <div class="tile" data-shape="frame"><i class="fa-regular fa-square"></i>枠線</div>
-            <div class="tile" data-shape="ring"><i class="fa-regular fa-circle"></i>円枠</div>
-          </div>
-        </div>
-        <div>
-          <div class="sec-title"><i class="fa-solid fa-flag-checkered"></i>チーム風オーバーレイ・リボン</div>
-          <div class="grid grid-cols-3 gap-1.5">
-            <div class="tile" data-shape="ribbon"><i class="fa-solid fa-ribbon"></i>リボン</div>
-            <div class="tile" data-shape="slash"><i class="fa-solid fa-slash"></i>スラッシュ帯</div>
-            <div class="tile" data-shape="stripe"><i class="fa-solid fa-grip-lines-vertical rotate-12"></i>斜めストライプ</div>
-            <div class="tile" data-shape="bottomGrad"><i class="fa-solid fa-circle-half-stroke"></i>下部グラデ</div>
-            <div class="tile" data-shape="dim"><i class="fa-solid fa-moon"></i>暗幕</div>
-            <div class="tile" data-shape="teamTint"><i class="fa-solid fa-droplet"></i>チーム色幕</div>
-            <div class="tile" data-shape="corner"><i class="fa-solid fa-bookmark rotate-45"></i>コーナー</div>
-            <div class="tile" data-shape="scoreboard"><i class="fa-solid fa-table-cells-large"></i>スコア板</div>
-            <div class="tile" data-shape="nameplate"><i class="fa-solid fa-id-badge"></i>選手プレート</div>
-          </div>
-        </div>
-        <div>
-          <div class="sec-title"><i class="fa-solid fa-certificate"></i>バッジ</div>
-          <div class="grid grid-cols-5 gap-1.5">
-            <div class="tile !py-2" data-badge="VS"><span class="font-display text-lg text-accent">VS</span></div>
-            <div class="tile !py-2" data-badge="WIN"><span class="font-display text-lg text-accent">WIN</span></div>
-            <div class="tile !py-2" data-badge="MVP"><span class="font-display text-lg text-accent">MVP</span></div>
-            <div class="tile !py-2" data-badge="NEW"><span class="font-display text-lg text-hot">NEW</span></div>
-            <div class="tile !py-2" data-badge="__TEAM"><i class="fa-solid fa-shield"></i>エンブレム</div>
-          </div>
-        </div>
-      </section>
-
-      <section data-pane="text" class="space-y-5 hidden">
-        <div>
-          <div class="sec-title"><i class="fa-solid fa-plus"></i>テキストを追加</div>
-          <div class="space-y-1.5">
-            <button class="w-full text-left card !py-2.5 hover:border-accent/60 transition" data-text="headline"><span class="font-display text-3xl text-white">HEADLINE</span><span class="block text-[10px] text-slate-500">英字大見出し / Bebas Neue</span></button>
-            <button class="w-full text-left card !py-2.5 hover:border-accent/60 transition" data-text="heading"><span class="text-xl font-black text-white">見出しテキスト</span><span class="block text-[10px] text-slate-500">日本語見出し / Noto Sans JP 900</span></button>
-            <button class="w-full text-left card !py-2.5 hover:border-accent/60 transition" data-text="body"><span class="text-sm text-slate-200">本文テキストを入力</span><span class="block text-[10px] text-slate-500">本文 / 自動折り返し</span></button>
-          </div>
-        </div>
-        <div>
-          <div class="sec-title"><i class="fa-solid fa-palette"></i>スタイル付きテキスト</div>
-          <div class="grid grid-cols-2 gap-1.5">
-            <button class="card !p-2.5 hover:border-accent/60 transition" data-text="italic"><span style="font-family:Montserrat;font-weight:900;font-style:italic" class="text-lg text-white">GAME DAY</span></button>
-            <button class="card !p-2.5 hover:border-accent/60 transition" data-text="outline"><span style="font-family:Anton;-webkit-text-stroke:1px #fff;color:transparent" class="text-xl">OUTLINE</span></button>
-            <button class="card !p-2.5 hover:border-accent/60 transition" data-text="neon"><span class="font-display text-2xl text-accent" style="text-shadow:0 0 12px #c8ff2e">NEON</span></button>
-            <button class="card !p-2.5 hover:border-accent/60 transition" data-text="label"><span style="font-family:Oswald;font-weight:700" class="text-xs bg-accent text-ink px-2 py-0.5">LABEL TAG</span></button>
-            <button class="card !p-2.5 hover:border-accent/60 transition" data-text="score"><span class="font-display text-2xl text-white">3 - 1</span></button>
-            <button class="card !p-2.5 hover:border-accent/60 transition" data-text="player"><span style="font-family:Oswald;font-weight:700" class="text-sm text-white">#10 YAMADA</span></button>
-            <button class="card !p-2.5 hover:border-accent/60 transition" data-text="date"><span style="font-family:Oswald;font-weight:700" class="text-sm text-white">11.03 SUN</span></button>
-            <button class="card !p-2.5 hover:border-accent/60 transition" data-text="jpShadow"><span class="text-sm font-black text-white" style="text-shadow:3px 3px 0 #ff3b5c">必勝！</span></button>
-          </div>
-        </div>
-        <p class="text-[10px] text-slate-500 leading-relaxed"><i class="fa-solid fa-keyboard mr-1"></i>キャンバス上のテキストをダブルクリックで直接編集できます。</p>
-      </section>
-
-      <section data-pane="bg" class="space-y-5 hidden">
-        <div><div class="sec-title"><i class="fa-solid fa-swatchbook"></i>グラデーション</div><div class="grid grid-cols-4 gap-2" id="bgGrads"></div></div>
-        <div><div class="sec-title"><i class="fa-solid fa-square"></i>単色</div><div class="grid grid-cols-8 gap-1.5" id="bgSolids"></div></div>
-        <div><div class="sec-title"><i class="fa-solid fa-sliders"></i>カスタム</div><div class="card space-y-3" id="bgCustom"></div></div>
-      </section>
-
-      <section data-pane="layer" class="hidden">
-        <div class="sec-title"><i class="fa-solid fa-layer-group"></i>レイヤー（上が前面）</div>
-        <div id="layerList" class="space-y-0.5"></div>
-        <p class="text-[10px] text-slate-500 mt-3 leading-relaxed"><i class="fa-solid fa-circle-info mr-1"></i>重なって選択しにくいオブジェクトはここから選択。Alt+クリックで背面の選択中オブジェクトを掴んだまま操作できます。</p>
-      </section>
-
-      <section data-pane="props" class="hidden">
-        <div class="sec-title"><i class="fa-solid fa-sliders"></i>操作パネル<span class="text-slate-500 font-normal tracking-normal normal-case" id="propTitle">— 背景</span></div>
-        <div id="props" class="flex flex-col gap-2.5"></div>
-      </section>
-    </div>
-  </aside>
-
-  <!-- CENTER -->
-  <section class="flex flex-col min-w-0 min-h-0">
-    <div class="h-12 flex items-center justify-between gap-3 px-3 border-b border-line bg-panel/60 overflow-x-auto overflow-y-hidden thin-x" id="centerBar">
-      <div class="flex items-center gap-3 min-w-0 flex-1">
-        <button class="icon-btn flex-shrink-0 -mr-1" id="tglLeft" title="左パネルを畳む／開く"><i class="fa-solid fa-angles-left"></i></button>
-        <div class="flex bg-ink border border-line rounded-[10px] p-0.5 flex-shrink-0" id="centerTabs">
-          <button class="mode-tab active" data-ctab="quick" title="クイック編集"><i class="fa-solid fa-bolt"></i><span class="tab-label">クイック編集</span></button>
-          <button class="mode-tab" data-ctab="photocraft" title="PhotoCraft"><i class="fa-solid fa-camera-retro"></i><span class="tab-label">PhotoCraft</span></button>
-          <button class="mode-tab" data-ctab="vectorcraft" title="VectorCraft"><i class="fa-solid fa-bezier-curve"></i><span class="tab-label">VectorCraft</span></button>
-        </div>
-        <div class="flex items-center gap-1 flex-shrink-0 py-1" id="quickTools"></div>
-        <div class="hidden items-center gap-1.5 overflow-x-auto min-w-0 flex-1 py-1" id="craftTools">
-          <button class="mini-btn flex items-center gap-1.5" data-ct="send"><i class="fa-solid fa-file-import text-accent"></i><span>スライド<b class="ctSlide">1</b>を開く</span></button>
-          <button class="mini-btn flex items-center gap-1.5" data-ct="pull" id="ctPull"><i class="fa-solid fa-file-export text-accent"></i>書き出してスライドに反映</button>
-          <span class="text-[11px] text-slate-400 truncate" id="craftHint"></span>
-        </div>
-      </div>
-        <!-- 変形・整列（選択中のオブジェクト） -->
-      <div class="flex items-center gap-0.5 flex-shrink-0 border-l border-line pl-2" id="objBar" title="1つ選択：キャンバス基準 ／ 複数選択：選択範囲基準">
-        <button class="icon-btn !w-7 !h-7" data-ob="al:left" title="左揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M3 2v16"/><rect x="5" y="5" width="11" height="3.5" rx="1"/><rect x="5" y="11.5" width="7" height="3.5" rx="1"/></svg></button>
-        <button class="icon-btn !w-7 !h-7" data-ob="al:cx" title="左右中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M10 2v16"/><rect x="4" y="5" width="12" height="3.5" rx="1"/><rect x="6" y="11.5" width="8" height="3.5" rx="1"/></svg></button>
-        <button class="icon-btn !w-7 !h-7" data-ob="al:right" title="右揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M17 2v16"/><rect x="4" y="5" width="11" height="3.5" rx="1"/><rect x="8" y="11.5" width="7" height="3.5" rx="1"/></svg></button>
-        <span class="w-px h-5 bg-line mx-0.5 flex-shrink-0"></span>
-        <button class="icon-btn !w-7 !h-7" data-ob="al:top" title="上揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 3h16"/><rect x="5" y="5" width="3.5" height="11" rx="1"/><rect x="11.5" y="5" width="3.5" height="7" rx="1"/></svg></button>
-        <button class="icon-btn !w-7 !h-7" data-ob="al:cy" title="上下中央揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 10h16"/><rect x="5" y="4" width="3.5" height="12" rx="1"/><rect x="11.5" y="6" width="3.5" height="8" rx="1"/></svg></button>
-        <button class="icon-btn !w-7 !h-7" data-ob="al:bottom" title="下揃え"><svg class="al-ico" viewBox="0 0 20 20"><path d="M2 17h16"/><rect x="5" y="4" width="3.5" height="11" rx="1"/><rect x="11.5" y="8" width="3.5" height="7" rx="1"/></svg></button>
-        <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
-        <button class="icon-btn !w-7 !h-7" data-ob="flipX" title="左右反転"><i class="fa-solid fa-left-right"></i></button>
-        <button class="icon-btn !w-7 !h-7" data-ob="flipY" title="上下反転"><i class="fa-solid fa-up-down"></i></button>
-        <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
-        <label class="flex items-center gap-1 text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0" title="回転"><i class="fa-solid fa-rotate-right"></i>
-          <input type="number" class="field !w-14 !py-0.5 !px-1.5 text-center" id="obAngle" min="-180" max="180" step="1" value="0">°</label>
-        <button class="icon-btn !w-7 !h-7" data-ob="resetRot" title="回転をリセット"><i class="fa-solid fa-rotate-left"></i></button>
-        <span class="w-px h-5 bg-line mx-1 flex-shrink-0"></span>
-        <label class="flex items-center gap-1.5 text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0" title="不透明度"><i class="fa-solid fa-circle-half-stroke"></i>
-          <input type="range" class="!w-16" id="obOpacity" min="0" max="100" step="1" value="100"><b class="text-slate-200 w-8 tabular-nums ob-out" id="obOpacityOut">100%</b></label>
-      </div>
-      <div class="flex items-center gap-0.5 flex-shrink-0" id="objTools">
-        <button class="icon-btn" data-op="front" title="最前面へ"><i class="fa-solid fa-angles-up"></i></button>
-        <button class="icon-btn" data-op="forward" title="前面へ"><i class="fa-solid fa-angle-up"></i></button>
-        <button class="icon-btn" data-op="backward" title="背面へ"><i class="fa-solid fa-angle-down"></i></button>
-        <button class="icon-btn" data-op="back" title="最背面へ"><i class="fa-solid fa-angles-down"></i></button>
-        <div class="w-px h-5 bg-line mx-1"></div>
-        <button class="icon-btn" data-op="dup" title="複製 (Ctrl+D)"><i class="fa-regular fa-clone"></i></button>
-        <button class="icon-btn" data-op="lock" title="ロック切替"><i class="fa-solid fa-lock"></i></button>
-        <button class="icon-btn hover:!text-hot" data-op="del" title="削除 (Delete)"><i class="fa-regular fa-trash-can"></i></button>
-      </div>
-      <button class="icon-btn hidden flex-shrink-0" id="btnCraftMax" title="エディタを広く表示"><i class="fa-solid fa-expand"></i></button>
-      <div class="w-px h-5 bg-line flex-shrink-0"></div>
-      <button class="icon-btn flex-shrink-0" id="btnLayoutReset" title="パネルの幅・高さ・開閉を初期状態に戻す"><i class="fa-solid fa-table-columns"></i></button>
-      <button class="icon-btn flex-shrink-0 -ml-1" id="tglRight" title="右パネルを畳む／開く"><i class="fa-solid fa-angles-right"></i></button>
-    </div>
-
-
-    <div id="stage" class="relative flex-1 min-h-0 overflow-hidden">
-      <div id="quickStage" class="absolute inset-0 flex items-center justify-center">
-        <div id="canvasWrap" class="relative"><canvas id="editor"></canvas></div>
-        <div id="dropOverlay" class="absolute inset-3 rounded-2xl border-2 border-dashed border-accent bg-accent/10 items-center justify-center text-accent font-bold pointer-events-none z-10">
-          <div class="text-center"><i class="fa-solid fa-image text-4xl mb-2"></i><div>ドロップして画像を配置</div></div>
-        </div>
-        <div class="absolute left-3 bottom-3 flex items-center gap-2 text-[10px] text-slate-500 bg-ink/80 border border-line rounded-md px-2 py-1">
-          <span id="sizeInfo">1080 × 1350</span><span class="text-line">|</span><span id="zoomInfo">100%</span>
-        </div>
-      </div>
-      <div id="craftHost" class="absolute inset-0 hidden">
-        <iframe class="craft-frame hidden" id="frame-photocraft" title="PhotoCraft" allow="fullscreen; clipboard-read; clipboard-write"></iframe>
-        <iframe class="craft-frame hidden" id="frame-vectorcraft" title="VectorCraft" allow="fullscreen; clipboard-read; clipboard-write"></iframe>
-        <div id="craftLoading" class="absolute inset-0 hidden flex-col items-center justify-center gap-3 bg-[#262626] text-slate-300 text-sm">
-          <i class="fa-solid fa-circle-notch fa-spin text-2xl text-accent"></i><span id="craftLoadingText">エディタを読み込み中…</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- slides in posting order -->
-    <div class="relative border-t border-line bg-panel flex flex-col post-only" id="propPanel">
-      <div class="px-4 pt-2 pb-2">
-        <div class="flex items-center justify-between cursor-pointer select-none" id="stripHead" title="クリックで開閉">
-          <div class="text-[11px] font-bold tracking-[0.15em] text-slate-300 flex items-center gap-2">
-            <i class="fa-solid fa-chevron-down text-slate-500 transition-transform" id="stripChevron"></i>
-            <i class="fa-solid fa-images text-accent"></i>投稿する画像
-            <span class="text-slate-500 font-normal tracking-normal">左から順に投稿（ドラッグで並べ替え）</span>
-          </div>
-          <span class="text-[11px] text-slate-400" id="slideCount">1 / 10枚</span>
-        </div>
-        <div class="flex items-center gap-2 overflow-x-auto pb-1 mt-2" id="slideStrip"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- RIGHT -->
-  <aside class="relative bg-panel border-l border-line flex flex-col min-h-0" id="rightAside">
-    <div class="vsplit left" id="splitRight" title="ドラッグで幅を変更（ダブルクリックで畳む）"></div>
-    <div class="flex-1 overflow-y-auto p-4 space-y-5">
-      <div>
-        <div class="sec-title"><i class="fa-solid fa-crop-simple"></i>サイズ</div>
-        <div class="grid grid-cols-3 gap-1 bg-ink border border-line rounded-xl p-1" id="ratioBtns">
-          <button class="ratio-btn justify-center !px-1" data-ratio="1:1"><span class="shape w-3.5 h-3.5"></span>1:1</button>
-          <button class="ratio-btn justify-center !px-1" data-ratio="4:5"><span class="shape w-3 h-3.5"></span>4:5</button>
-          <button class="ratio-btn justify-center !px-1" data-ratio="9:16"><span class="shape w-2.5 h-4"></span>9:16</button>
-        </div>
-        <p class="text-[10px] text-slate-500 mt-1.5" id="ratioNote">正方形 / フィード / ストーリーズ</p>
-      </div>
-
-      <div class="post-only">
-        <div class="sec-title"><i class="fa-solid fa-tag"></i>投稿設定</div>
-        <div class="grid grid-cols-2 gap-2">
-          <div><label class="lbl">投稿日</label><input type="date" class="field" id="postDate"></div>
-          <div><label class="lbl">投稿タイプ</label><select class="field" id="postType"></select></div>
-        </div>
-        <div class="grid grid-cols-[1fr_auto_auto] gap-1.5 mt-2">
-          <select class="field" id="capVariant"></select>
-          <button class="btn !px-2.5" id="btnInsertTpl" title="テンプレートを挿入"><i class="fa-solid fa-file-import"></i>挿入</button>
-          <button class="btn !px-2.5" id="btnEditTypes" title="投稿タイプとキャプションテンプレートを編集"><i class="fa-solid fa-pen-to-square"></i></button>
-        </div>
-        <label class="ctl-row mt-2 text-[11px]"><input type="checkbox" id="autoTags" checked>テンプレ挿入時にハッシュタグも自動追加</label>
-      </div>
-
-      <div class="preset-only">
-        <div class="sec-title"><i class="fa-solid fa-wand-magic-sparkles"></i>プリセット設定</div>
-        <div class="card space-y-2.5">
-          <div><label class="lbl">分類（投稿タイプ）</label><select class="field" id="presetType"></select></div>
-          <div><label class="lbl">説明（任意）</label><input class="field select-text" id="presetSub" placeholder="例：ホーム戦の試合告知"></div>
-          <p class="text-[10px] text-slate-500 leading-relaxed">左の「投稿情報」タブの差し込み項目（<code class="text-accent">{対戦相手}</code> など）をテキストに入れておくと、投稿で使うときにその投稿の情報が自動で入ります。</p>
-          <button class="btn w-full" id="btnPresetInsertTpl"><i class="fa-solid fa-code"></i>差し込み項目を確認する</button>
-        </div>
-        <div class="grid grid-cols-2 gap-2 mt-3">
-          <button class="btn" id="btnPresetDup"><i class="fa-regular fa-copy"></i>コピーを作成</button>
-          <button class="btn hover:!border-hot hover:!text-hot" id="btnPresetDelete"><i class="fa-regular fa-trash-can"></i>削除</button>
-        </div>
-        <button class="btn btn-accent w-full mt-2 !py-2.5" id="btnPresetUse"><i class="fa-solid fa-plus"></i>このデザインで投稿を作成</button>
-      </div>
-
-      <div class="post-only">
-        <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-pen-nib"></i>キャプション</span>
-          <span class="tracking-normal normal-case font-normal text-[10px]"><span id="capCount">0</span>/2200 ・ #<span id="tagCount">0</span>/30</span></div>
-        <textarea id="caption" rows="11" class="field !text-[12px] leading-relaxed resize-y select-text" placeholder="キャプションを入力..."></textarea>
-        <div class="flex flex-wrap gap-1 mt-1.5" id="emojiBar"></div>
-      </div>
-
-      <div class="post-only">
-        <div class="sec-title"><i class="fa-solid fa-hashtag"></i>ハッシュタグ簡単追加</div>
-        <div class="space-y-2.5" id="tagGroups"></div>
-      </div>
-
-      <div class="post-only">
-        <div class="sec-title"><i class="fa-solid fa-at"></i>アカウント・選手タグ付け</div>
-        <div class="card space-y-2">
-          <div class="grid grid-cols-[1fr_1fr_auto] gap-1.5">
-            <div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-500">@</span><input class="field pl-5 select-text" id="mHandle" placeholder="account"></div>
-            <input class="field select-text" id="mName" placeholder="名前・背番号">
-            <button class="btn btn-accent !px-2.5" id="mAdd"><i class="fa-solid fa-plus"></i></button>
-          </div>
-          <div id="mentionList" class="space-y-1 max-h-56 overflow-y-auto"></div>
-          <div class="grid grid-cols-2 gap-1.5 pt-1">
-            <button class="btn !text-[11px]" id="mInsertAll"><i class="fa-solid fa-user-plus"></i>全員を本文へ</button>
-            <button class="btn !text-[11px]" id="mCopy"><i class="fa-regular fa-copy"></i>タグ用リストをコピー</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="post-only">
-        <div class="sec-title"><i class="fa-solid fa-paper-plane"></i>書き出し・投稿</div>
-        <div class="card space-y-2">
-          <div class="grid grid-cols-[auto_1fr] gap-2 items-center">
-            <span class="text-[11px] text-slate-400">解像度</span>
-            <select class="field" id="exportScale">
-              <option value="1">標準（幅1080px）Instagram推奨</option>
-              <option value="2">高画質（幅2160px）</option>
-            </select>
-          </div>
-          <button class="btn w-full !py-2.5" id="btnPreview"><i class="fa-brands fa-instagram text-sm"></i>Instagram プレビュー</button>
+        <div class="post-only">
+          <div class="sec-title"><i class="fa-solid fa-tag"></i>投稿設定</div>
           <div class="grid grid-cols-2 gap-2">
-            <button class="btn !py-2.5" id="btnSaveAll"><i class="fa-solid fa-file-zipper"></i>全画像を保存</button>
-            <button class="btn !py-2.5" id="btnCopy"><i class="fa-regular fa-copy"></i>本文コピー</button>
+            <div><label class="lbl">投稿日</label><input type="date" class="field" id="postDate"></div>
+            <div><label class="lbl">投稿タイプ</label><select class="field" id="postType"></select></div>
           </div>
-          <button class="btn !py-2 w-full !text-[11px]" id="btnSaveCurrent"><i class="fa-solid fa-image"></i>表示中のスライドだけPNG保存</button>
-          <button class="btn btn-hot w-full !py-2.5" id="btnPublish"><i class="fa-solid fa-paper-plane"></i>このサイトからInstagramに投稿</button>
+          <div class="grid grid-cols-[1fr_auto_auto] gap-1.5 mt-2">
+            <select class="field" id="capVariant"></select>
+            <button class="btn !px-2.5" id="btnInsertTpl" title="テンプレートを挿入"><i class="fa-solid fa-file-import"></i>挿入</button>
+            <button class="btn !px-2.5" id="btnEditTypes" title="投稿タイプとキャプションテンプレートを編集"><i class="fa-solid fa-pen-to-square"></i></button>
+          </div>
+          <label class="ctl-row mt-2 text-[11px]"><input type="checkbox" id="autoTags" checked>テンプレ挿入時にハッシュタグも自動追加</label>
+        </div>
+
+        <div class="preset-only">
+          <div class="sec-title"><i class="fa-solid fa-wand-magic-sparkles"></i>プリセット設定</div>
+          <div class="card space-y-2.5">
+            <div><label class="lbl">分類（投稿タイプ）</label><select class="field" id="presetType"></select></div>
+            <div><label class="lbl">説明（任意）</label><input class="field select-text" id="presetSub" placeholder="例：ホーム戦の試合告知"></div>
+            <p class="text-[10px] text-slate-500 leading-relaxed">左の「投稿情報」タブの差し込み項目（<code class="text-accent">{対戦相手}</code> など）をテキストに入れておくと、投稿で使うときにその投稿の情報が自動で入ります。</p>
+            <button class="btn w-full" id="btnPresetInsertTpl"><i class="fa-solid fa-code"></i>差し込み項目を確認する</button>
+          </div>
+          <div class="grid grid-cols-2 gap-2 mt-3">
+            <button class="btn" id="btnPresetDup"><i class="fa-regular fa-copy"></i>コピーを作成</button>
+            <button class="btn hover:!border-hot hover:!text-hot" id="btnPresetDelete"><i class="fa-regular fa-trash-can"></i>削除</button>
+          </div>
+          <button class="btn btn-accent w-full mt-2 !py-2.5" id="btnPresetUse"><i class="fa-solid fa-plus"></i>このデザインで投稿を作成</button>
+        </div>
+
+        <div class="post-only">
+          <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-pen-nib"></i>キャプション</span>
+            <span class="tracking-normal normal-case font-normal text-[10px]"><span id="capCount">0</span>/2200 ・ #<span id="tagCount">0</span>/30</span></div>
+          <textarea id="caption" rows="11" class="field !text-[12px] leading-relaxed resize-y select-text" placeholder="キャプションを入力..."></textarea>
+          <div class="flex flex-wrap gap-1 mt-1.5" id="emojiBar"></div>
+        </div>
+
+        <div class="post-only">
+          <div class="sec-title"><i class="fa-solid fa-hashtag"></i>ハッシュタグ簡単追加</div>
+          <div class="space-y-2.5" id="tagGroups"></div>
+        </div>
+
+        <div class="post-only">
+          <div class="sec-title"><i class="fa-solid fa-at"></i>アカウント・選手タグ付け</div>
+          <div class="card space-y-2">
+            <div class="grid grid-cols-[1fr_1fr_auto] gap-1.5">
+              <div class="relative"><span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-500">@</span><input class="field pl-5 select-text" id="mHandle" placeholder="account"></div>
+              <input class="field select-text" id="mName" placeholder="名前・背番号">
+              <button class="btn btn-accent !px-2.5" id="mAdd"><i class="fa-solid fa-plus"></i></button>
+            </div>
+            <div id="mentionList" class="space-y-1 max-h-56 overflow-y-auto"></div>
+            <div class="grid grid-cols-2 gap-1.5 pt-1">
+              <button class="btn !text-[11px]" id="mInsertAll"><i class="fa-solid fa-user-plus"></i>全員を本文へ</button>
+              <button class="btn !text-[11px]" id="mCopy"><i class="fa-regular fa-copy"></i>タグ用リストをコピー</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="post-only">
+          <div class="sec-title"><i class="fa-solid fa-paper-plane"></i>書き出し・投稿</div>
+          <div class="card space-y-2">
+            <div class="grid grid-cols-[auto_1fr] gap-2 items-center">
+              <span class="text-[11px] text-slate-400">解像度</span>
+              <select class="field" id="exportScale">
+                <option value="1">標準（幅1080px）Instagram推奨</option>
+                <option value="2">高画質（幅2160px）</option>
+              </select>
+            </div>
+            <button class="btn w-full !py-2.5" id="btnPreview"><i class="fa-brands fa-instagram text-sm"></i>Instagram プレビュー</button>
+            <div class="grid grid-cols-2 gap-2">
+              <button class="btn !py-2.5" id="btnSaveAll"><i class="fa-solid fa-file-zipper"></i>全画像を保存</button>
+              <button class="btn !py-2.5" id="btnCopy"><i class="fa-regular fa-copy"></i>本文コピー</button>
+            </div>
+            <button class="btn !py-2 w-full !text-[11px]" id="btnSaveCurrent"><i class="fa-solid fa-image"></i>表示中のスライドだけPNG保存</button>
+            <button class="btn btn-hot w-full !py-2.5" id="btnPublish"><i class="fa-solid fa-paper-plane"></i>このサイトからInstagramに投稿</button>
+          </div>
         </div>
       </div>
-    </div>
-  </aside>
+    </aside>
+  </div>
 </main>
 
 <!-- ============ NEW POST MODAL ============ -->
@@ -2017,8 +2026,10 @@ let LAY = { ...LAYOUT_DEF, folds: {}, ...store.get('layout', {}) };
 const clampLay = (k, v) => Math.round(Math.max(LIM[k][0], Math.min(LIM[k][1], v)));
 function applyLayout(save = true) {
   const m = $('#viewEditor');
-  m.style.setProperty('--lw', LAY.left ? LAY.lw + 'px' : '0px');
-  m.style.setProperty('--rw', LAY.right ? LAY.rw + 'px' : '0px');
+  m.style.setProperty('--lw', LAY.lw + 'px');
+  m.style.setProperty('--rw', LAY.rw + 'px');
+  m.style.setProperty('--lpad', LAY.left ? LAY.lw + 'px' : '0px');
+  m.style.setProperty('--rpad', LAY.right ? LAY.rw + 'px' : '0px');
   document.body.classList.toggle('left-off', !LAY.left);
   document.body.classList.toggle('right-off', !LAY.right);
   $('#tglLeft i').className = 'fa-solid ' + (LAY.left ? 'fa-angles-left' : 'fa-angles-right');
