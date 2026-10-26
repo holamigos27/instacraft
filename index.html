@@ -660,6 +660,19 @@
   </div>
 </div>
 
+<!-- ============ STAFF LOGIN GATE (shared data) ============ -->
+<div class="modal" id="loginGate" data-locked>
+  <div class="w-[460px] bg-panel border border-line rounded-2xl p-7 text-center space-y-4">
+    <div class="w-14 h-14 rounded-2xl bg-accent/10 text-accent flex items-center justify-center mx-auto"><i class="fa-solid fa-lock text-2xl"></i></div>
+    <div class="font-display text-3xl text-white">STAFF <span class="text-accent">LOGIN</span></div>
+    <p class="text-xs text-slate-300 leading-relaxed">instaCRAFT の投稿リスト・デザインプリセット・設定は、STAFF 全員で共有しています。<br>CRAQUES HUB の管理画面で STAFF としてログインしてから開いてください。</p>
+    <div class="grid grid-cols-2 gap-2 pt-2">
+      <a class="btn btn-accent !py-2.5" href="/admin" target="_blank" rel="noopener"><i class="fa-solid fa-right-to-bracket"></i>管理画面でログイン</a>
+      <button class="btn !py-2.5" onclick="location.reload()"><i class="fa-solid fa-rotate-right"></i>ログインしたので再読み込み</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ PRESET (NEW / SAVE) MODAL ============ -->
 <div class="modal" id="presetModal">
   <div class="w-[520px] bg-panel border border-line rounded-2xl p-6 space-y-4">
@@ -915,7 +928,7 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const store = {
   get(k, d) { try { const v = localStorage.getItem('tps_' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('tps_' + k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+  set(k, v) { queueSharedSetting(k, v); try { localStorage.setItem('tps_' + k, JSON.stringify(v)); return true; } catch (e) { return false; } }
 };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -944,7 +957,7 @@ function toast(msg, icon = 'fa-circle-check', color = 'text-accent', ms = 2400) 
 }
 function openModal(id) { $('#' + id).classList.add('open'); }
 function closeModal(id) { $('#' + id).classList.remove('open'); }
-$$('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m || e.target.closest('[data-close]')) m.classList.remove('open'); }));
+$$('.modal').forEach(m => m.addEventListener('click', e => { if (m.dataset.locked === undefined && (e.target === m || e.target.closest('[data-close]'))) m.classList.remove('open'); }));
 
 /* ---------------- storage (IndexedDB) ---------------- */
 /* two stores: posts, and the user's own design presets (same shape: title, ratio, slides[]) */
@@ -980,6 +993,135 @@ DB.posts = makeStore('posts');
 DB.presets = makeStore('presets');
 /* the store an open document (post or preset) lives in */
 const docStore = () => (CUR.kind === 'preset' ? DB.presets : DB.posts);
+
+/* ---------------- shared storage (CRAQUES HUB /instacraft) ----------------
+   Opened at CRAQUES HUB's /instacraft, posts, presets and settings live in its database (Turso),
+   so every logged-in STAFF works on the same data. Anywhere else (localhost, GitHub Pages) they
+   stay in this browser (IndexedDB / localStorage). */
+const REMOTE = /^\/instacraft(\/|$)/.test(location.pathname);
+function adminToken() {
+  try {
+    const s = JSON.parse(localStorage.getItem('admin_session_v1') || 'null');
+    return s && s.token && Date.now() < s.expiresAt ? s.token : '';
+  } catch (e) { return ''; }
+}
+function adminName() { try { return JSON.parse(localStorage.getItem('admin_session_v1') || 'null')?.name || ''; } catch (e) { return ''; } }
+function showLoginGate() { $('#loginGate').classList.add('open'); }
+async function api(action, payload = {}) {
+  const r = await fetch('/api/gas', { method: 'POST', body: JSON.stringify({ action, payload: { ...payload, adminToken: adminToken() } }) });
+  const j = await r.json().catch(() => ({ success: false, error: 'サーバーに接続できません（HTTP ' + r.status + '）' }));
+  if (!j.success) {
+    if (j.error === 'ADMIN_AUTH_REQUIRED') { showLoginGate(); throw new Error('ログインが必要です'); }
+    throw new Error(j.error || 'エラーが発生しました');
+  }
+  return j.data;
+}
+/* images leave the documents: uploaded once (by content), referenced by URL */
+const IMG_URL = new Map();
+function shrinkDataURL(src) {
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => {
+      const c = document.createElement('canvas');
+      let s = 1, out = src;
+      for (let n = 0; n < 6 && out.length > 3_900_000; n++) {
+        s *= 0.8; c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
+        const x = c.getContext('2d'); x.clearRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height);
+        out = c.toDataURL('image/webp', 0.9);
+      }
+      res(out);
+    };
+    im.onerror = () => res(src);
+    im.src = src;
+  });
+}
+async function uploadImage(dataUrl) {
+  if (IMG_URL.has(dataUrl)) return IMG_URL.get(dataUrl);
+  const data = dataUrl.length > 3_900_000 ? await shrinkDataURL(dataUrl) : dataUrl;
+  const { url } = await api('icSaveImage', { data });
+  IMG_URL.set(dataUrl, url);
+  return url;
+}
+async function externalizeImages(stateStr) {
+  if (!stateStr || !stateStr.includes('"src":"data:')) return stateStr;
+  const st = JSON.parse(stateStr);
+  const walk = async objs => {
+    for (const o of objs || []) {
+      if (o.type === 'image' && typeof o.src === 'string' && o.src.startsWith('data:')) o.src = await uploadImage(o.src);
+      if (o.objects) await walk(o.objects);
+    }
+  };
+  await walk(st.json.objects);
+  return JSON.stringify(st);
+}
+const VERS = {};
+function remoteStore(kind) {
+  const unwrap = d => { if (!d) return d; const { _v, _by, ...doc } = d; doc.updatedBy = _by; return doc; };
+  return {
+    async all() { return (await api('icList', { kind })).map(unwrap); },
+    async get(id) { const d = await api('icGet', { kind, id }); if (d) VERS[kind + id] = d._v; return unwrap(d) || undefined; },
+    async put(doc) {
+      for (const s of doc.slides || []) if (s.state) s.state = await externalizeImages(s.state);
+      const { updatedBy, ...clean } = doc;
+      let r = await api('icPut', { kind, doc: clean, baseVersion: VERS[kind + doc.id] || 0 });
+      if (r.conflict) {
+        const who = r.by ? `${r.by} さん` : 'ほかの人';
+        if (!confirm(`この${kind === 'post' ? '投稿' : 'プリセット'}は、${who}が先に更新しています。\n\nOK：自分の内容で上書き保存する\nキャンセル：保存せずに、最新の内容を読み込み直す`)) {
+          VERS[kind + doc.id] = r.version;
+          throw new Error('RELOAD');
+        }
+        r = await api('icPut', { kind, doc: clean, force: true });
+      }
+      VERS[kind + doc.id] = r.version;
+      doc.updatedBy = adminName();
+    },
+    async del(id) { await api('icDelete', { kind, id }); delete VERS[kind + id]; },
+  };
+}
+if (REMOTE) { DB.posts = remoteStore('post'); DB.presets = remoteStore('preset'); }
+
+/* posts/presets made in this browser before sharing started: offer once to move them into the shared data */
+async function migrateLocalDocs() {
+  if (!DB.db || store.get('migratedToShared', false)) return;
+  const local = { post: makeStore('posts'), preset: makeStore('presets') };
+  const docs = { post: await local.post.all(), preset: await local.preset.all() };
+  const n = docs.post.length + docs.preset.length;
+  if (!n) { store.set('migratedToShared', true); return; }
+  if (!confirm(`この端末だけに保存されている 投稿${docs.post.length}件・プリセット${docs.preset.length}件 があります。\nSTAFF 全員で使えるように、共有データへ移しますか？\n\n（キャンセルした場合は、この端末に残したままになります）`)) { store.set('migratedToShared', true); return; }
+  toast('共有データへ移しています…', 'fa-circle-notch fa-spin', 'text-accent', 4000);
+  for (const kind of ['post', 'preset']) {
+    const remote = kind === 'post' ? DB.posts : DB.presets;
+    for (const d of docs[kind]) await remote.put(d);
+  }
+  store.set('migratedToShared', true);
+  toast(`${n}件を共有データへ移しました`, 'fa-circle-check', 'text-accent', 4000);
+}
+
+/* shared settings: team, post types & templates, hashtag sets, info fields, mentions */
+const SHARED_KEYS = ['team', 'types', 'tagGroups', 'infoFields', 'mentions'];
+let settingsT = null, settingsQ = {};
+function queueSharedSetting(k, v) {
+  if (!REMOTE || !SHARED_KEYS.includes(k) || !adminToken()) return;
+  settingsQ[k] = v;
+  clearTimeout(settingsT);
+  settingsT = setTimeout(() => {
+    const settings = settingsQ; settingsQ = {};
+    api('icSaveSettings', { settings }).catch(e => toast('設定の共有保存に失敗しました：' + e.message, 'fa-triangle-exclamation', 'text-hot', 4000));
+  }, 800);
+}
+async function loadSharedSettings() {
+  const st = await api('icGetSettings') || {};
+  const now = { team: S.team, types: TYPES, tagGroups, infoFields, mentions };
+  if (st.team) Object.assign(S.team, st.team);
+  if (st.types) TYPES = st.types;
+  if (st.tagGroups) tagGroups = st.tagGroups;
+  if (st.infoFields) infoFields = st.infoFields;
+  if (st.mentions) mentions = st.mentions;
+  // the first STAFF to open it shares this browser's settings as the starting point
+  const missing = SHARED_KEYS.filter(k => st[k] == null);
+  if (missing.length) await api('icSaveSettings', { settings: Object.fromEntries(missing.map(k => [k, now[k]])) }).catch(() => {});
+}
+
 
 /* ---------------- state ---------------- */
 const RATIOS = { '1:1': [1080, 1080], '4:5': [1080, 1350], '9:16': [1080, 1920] };
@@ -1416,8 +1558,8 @@ async function applyPreset(key, opts = {}) {
   if (caption && CUR.kind === 'post' && $('#linkCaption').checked) setPostType(p.type, p.variant, true);
 }
 async function applyCustomPreset(id, { caption = true, record = true } = {}) {
-  const p = customById(id);
-  if (!p || !p.slides?.[0]?.state) return;
+  const p = (await DB.presets.get(id).catch(() => null)) || customById(id);
+  if (!p || !p.slides?.[0]?.state) return toast('プリセットを読み込めませんでした', 'fa-triangle-exclamation', 'text-hot');
   await fontsReady;
   const target = S.ratio;
   const kept = canvas.getObjects().filter(o => o.type === 'image' && !o.fromPreset);
@@ -2540,18 +2682,36 @@ function schedulePostSave() {
   clearTimeout(saveT);
   saveT = setTimeout(savePostNow, 700);
 }
+/* one save at a time (a shared save uploads images first); a save asked for meanwhile runs right after */
+let saving = null, saveAgain = false;
 async function savePostNow() {
   clearTimeout(saveT); saveT = null;
   if (!CUR.post) return;
+  if (saving) { saveAgain = true; return saving; }
+  saving = saveOnce();
+  try { await saving; } finally {
+    saving = null;
+    if (saveAgain) { saveAgain = false; await savePostNow(); }
+  }
+}
+async function saveOnce() {
+  const doc = CUR.post, kind = CUR.kind;
   captureSlide();
-  CUR.post.updatedAt = Date.now();
+  doc.updatedAt = Date.now();
   try {
-    await docStore().put(CUR.post);
-    if (CUR.kind === 'preset') { await loadCustomPresets(); renderPresetCards(); }
+    await docStore().put(doc);
+    if (kind === 'preset') { await loadCustomPresets(); renderPresetCards(); }
     const d = new Date();
-    setSaveState(`<i class="fa-solid fa-check text-accent"></i> 保存済み ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`);
+    setSaveState(`<i class="fa-solid fa-check text-accent"></i> ${REMOTE ? '共有に保存済み' : '保存済み'} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`);
   } catch (e) {
+    if (e.message === 'RELOAD' && CUR.post === doc) {
+      CUR.post = null; saveAgain = false;
+      await openDoc(kind, doc.id);
+      toast('最新の内容を読み込みました', 'fa-arrows-rotate');
+      return;
+    }
     setSaveState('<i class="fa-solid fa-triangle-exclamation text-hot"></i> 保存失敗');
+    if (REMOTE) toast('保存できませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 4000);
   }
   updateStripThumb(CUR.idx);
 }
@@ -3307,6 +3467,7 @@ async function renderHome() {
       <div class="min-w-0 cursor-pointer" data-pa="edit">
         <div class="text-sm font-bold text-white truncate hover:text-accent">${esc(p.title || '（無題）')}</div>
         <div class="text-[11px] text-slate-500 truncate mt-0.5">${esc((p.caption || '').split('\n').find(l => l.trim()) || 'キャプション未入力')}</div>
+        ${p.updatedBy ? `<div class="text-[10px] text-slate-600 truncate mt-0.5"><i class="fa-solid fa-user-pen mr-1"></i>最終更新：${esc(p.updatedBy)}</div>` : ''}
       </div>
       <div><span class="badge ${typeBadge(p.type)}">${esc(typeLabel(p.type))}</span></div>
       <div class="text-xs text-slate-300"><i class="fa-regular fa-images text-slate-500 mr-1"></i>${n}枚</div>
@@ -3464,7 +3625,7 @@ $('#pmCreate').addEventListener('click', async () => {
   const from = $('#pmBase').value;
   const preset = { ...base, ratio: $('#pmRatio').value, slides: [{ id: uid(), state: null, thumb: '' }] };
   if (from.startsWith('c:')) {
-    const src = customById(from.slice(2));
+    const src = await DB.presets.get(from.slice(2));
     preset.slides = JSON.parse(JSON.stringify(src.slides.slice(0, 1))); preset.slides[0].id = uid();
     if (src.ratio !== preset.ratio) preset._init = { ratio: true };
   } else if (from) preset._init = { base: from };
@@ -3601,7 +3762,7 @@ $('#btnRedo').addEventListener('click', redo);
 window.addEventListener('beforeunload', () => { if (CUR.post && saveT) savePostNow(); });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { if (PV.open) return closePreview(); $$('.modal.open').forEach(m => { if (m.id !== 'publishModal' || !publishing) m.classList.remove('open'); }); return; }
+  if (e.key === 'Escape') { if (PV.open) return closePreview(); $$('.modal.open').forEach(m => { if (m.dataset.locked === undefined && (m.id !== 'publishModal' || !publishing)) m.classList.remove('open'); }); return; }
   if (!CUR.post || S.tab !== 'quick' || $('.modal.open')) return;
   const tag = document.activeElement?.tagName;
   const inField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && !document.activeElement.classList.contains('upper-canvas');
@@ -3625,7 +3786,11 @@ document.addEventListener('keydown', e => {
    ========================================================== */
 (async function init() {
   await DB.open();
-  if (!DB.db) toast('このブラウザでは保存領域が使えないため、投稿は再読み込みで消えます', 'fa-triangle-exclamation', 'text-hot', 5000);
+  if (REMOTE) {
+    if (!adminToken()) { showLoginGate(); return; }
+    try { await loadSharedSettings(); await migrateLocalDocs(); }
+    catch (e) { if (adminToken()) toast('共有データを読み込めませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 6000); return; }
+  } else if (!DB.db) toast('このブラウザでは保存領域が使えないため、投稿は再読み込みで消えます', 'fa-triangle-exclamation', 'text-hot', 5000);
   bindTeam();
   await loadCustomPresets();
   renderTypeSelects(); renderInfoFields();
