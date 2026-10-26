@@ -1155,8 +1155,8 @@ function shrinkDataURL(src) {
     const im = new Image();
     im.onload = () => {
       const c = document.createElement('canvas');
-      let s = 1, out = src;
-      for (let n = 0; n < 8 && out.length > 1_400_000; n++) {
+      let s = 1.25, out = src;
+      for (let n = 0; n < 9 && out.length > 1_400_000; n++) {
         s *= 0.8; c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
         const x = c.getContext('2d'); x.clearRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height);
         out = c.toDataURL('image/webp', 0.9);
@@ -1173,6 +1173,23 @@ async function uploadImage(dataUrl) {
   const { url } = await api('icSaveImage', { data });
   IMG_URL.set(dataUrl, url);
   return url;
+}
+/* a design keeps an image at its drawn size even when the stored file has fewer pixels than the
+   object records (large images are shrunk on upload): width/height follow the file, scale makes up */
+function normalizeImageSizes(c) {
+  const walk = objs => objs.forEach(o => {
+    if (o.type === 'image' && !o.cropX && !o.cropY) {
+      const el = o.getElement(), nw = el?.naturalWidth || el?.width, nh = el?.naturalHeight || el?.height;
+      if (nw && nh && (Math.abs(nw - o.width) > 0.5 || Math.abs(nh - o.height) > 0.5)) {
+        const fx = o.width / nw, fy = o.height / nh;
+        o.set({ width: nw, height: nh, scaleX: o.scaleX * fx, scaleY: o.scaleY * fy });
+        if (o.filters?.length) o.applyFilters();
+        o.setCoords();
+      }
+    }
+    if (o._objects) walk(o._objects);
+  });
+  walk(c.getObjects());
 }
 async function externalizeImages(stateStr) {
   if (!stateStr || !stateStr.includes('"src":"data:')) return stateStr;
@@ -1552,6 +1569,7 @@ function loadSnapshot(str) {
     S.ratio = st.ratio; [S.W, S.H] = RATIOS[st.ratio]; S.bg = st.bg; S.lastPreset = st.lastPreset || null; S.dirty = !!st.dirty;
     markRatioUI();
     canvas.loadFromJSON(st.json, () => {
+      normalizeImageSizes(canvas);
       ensureBg();
       canvas.getObjects().forEach(o => { if (o.locked) o.set({ hasControls: false }); });
       fitCanvas(); canvas.renderAll();
@@ -3928,6 +3946,7 @@ function renderStateToDataURL(stateStr, widthPx, format = 'png', quality = 0.92)
     const [W, H] = RATIOS[st.ratio];
     const sc = new fabric.StaticCanvas(document.createElement('canvas'), { width: W, height: H, enableRetinaScaling: false, renderOnAddRemove: false });
     sc.loadFromJSON(st.json, () => {
+      normalizeImageSizes(sc);
       sc.renderAll();
       const url = sc.toDataURL({ format, quality, multiplier: widthPx / W });
       sc.dispose();
