@@ -501,8 +501,9 @@
             <div class="grid grid-cols-3 gap-1.5">
               <div class="tile" data-slot-add="emblem"><i class="fa-regular fa-circle"></i>エンブレム枠</div>
               <div class="tile" data-slot-add="logo"><i class="fa-regular fa-square"></i>ロゴ枠</div>
+              <div class="tile" data-slot-add="photo"><i class="fa-regular fa-image"></i>写真枠</div>
             </div>
-            <p class="text-[10px] text-slate-500 mt-1.5">デザインプリセットに枠を置いておくと、投稿で使うときにエンブレムやロゴがその位置・大きさで入ります。</p>
+            <p class="text-[10px] text-slate-500 mt-1.5">デザインプリセットに枠を置いておくと、投稿で使うときにエンブレム・ロゴ・アップロードした写真がその位置・大きさで入ります（写真は枠いっぱいに切り抜き）。</p>
           </div>
           <div>
             <div class="sec-title"><i class="fa-solid fa-vector-square"></i>基本図形</div>
@@ -1862,8 +1863,12 @@ const logoSlot = ({ W, H, k }) => emblemSlot(W * 0.915, H * 0.055, 52 * k, 'logo
 const slotKey = slot => slot.slotId || 'main';
 function placeInSlot(img, slot) {
   const b = slot.getBoundingRect(true, true), pad = slot.slotPad ?? 50;
-  const s = Math.min((b.width - pad * 2) / img.width, (b.height - pad * 2) / img.height);
+  // a photo frame is filled edge to edge and clipped to it; emblems and logos fit inside
+  const photo = slotKindOf(slot) === 'photo';
+  const s = photo ? Math.max(b.width / img.width, b.height / img.height) : Math.min((b.width - pad * 2) / img.width, (b.height - pad * 2) / img.height);
   img.set({ originX: 'center', originY: 'center', left: b.left + b.width / 2, top: b.top + b.height / 2, angle: 0, scaleX: s, scaleY: s, fullBleed: false, inSlot: slotKey(slot) });
+  img.clipPath = photo ? new fabric.Rect({ left: b.left, top: b.top, width: b.width, height: b.height, absolutePositioned: true }) : null;
+  img.dirty = true;
   img.setCoords();
   canvas.moveTo(img, canvas.getObjects().indexOf(slot) + 1);
   slot.filled = true;
@@ -1871,7 +1876,7 @@ function placeInSlot(img, slot) {
   canvas.getObjects().filter(o => o.role === 'placeholder' && (o.slotFor || 'main') === slotKey(slot)).forEach(o => canvas.remove(o));
 }
 /* after a design change, emblems and logos go back into their slot, or into a free slot of the same kind */
-const keyKind = k => (k === 'main' || k === 'logo' || k === 'sponsor' || /^logo-/.test(k) ? 'logo' : 'emblem');
+const keyKind = k => (/^photo-/.test(k) ? 'photo' : k === 'main' || k === 'logo' || k === 'sponsor' || /^logo-/.test(k) ? 'logo' : 'emblem');
 function refillSlots(kept) {
   const free = () => canvas.getObjects().filter(o => o.role === 'slot' && !o.filled);
   const slotted = kept.filter(img => img.inSlot), rest = [];
@@ -2130,7 +2135,7 @@ function addImageFromURL(url, { cover, name, slot: target, kind } = {}) {
       img.set({ name: name || '画像', originX: 'center', originY: 'center', left: S.W / 2, top: S.H / 2 });
       const active = canvas.getActiveObject();
       const empty = canvas.getObjects().filter(o => o.role === 'slot' && !o.filled);
-      const pick = target || (active?.role === 'slot' && !active.filled ? active : null) || (kind ? empty.find(s => slotKindOf(s) === kind) : null) || (!cover ? empty.find(s => s.slotPrimary || !s.slotId) : null);
+      const pick = target || (active?.role === 'slot' && !active.filled ? active : null) || (kind ? empty.find(s => slotKindOf(s) === kind) : null) || (!kind && cover !== true ? empty.find(s => s.slotKind === 'photo') : null) || (!cover ? empty.find(s => s.slotPrimary || !s.slotId) : null);
       const hasPhoto = canvas.getObjects().some(o => o.type === 'image' && (o.fullBleed || !o.inSlot));
       const slotName = sl => (sl.name || '枠').replace(/の枠$/, '') + 'の画像';
       canvas.add(img);
@@ -2191,12 +2196,13 @@ $('#assetTiles').addEventListener('click', e => {
 });
 /* an empty emblem / logo frame for a design preset (a group, so the label moves with it) */
 function addSlotFrame(kind) {
-  const label = kind === 'logo' ? 'ロゴ' : 'エンブレム', r = 120;
+  const label = { logo: 'ロゴ', photo: '写真' }[kind] || 'エンブレム', r = 120;
   const look = { originX: 'center', originY: 'center', fill: 'rgba(255,255,255,0.07)', stroke: 'rgba(255,255,255,0.55)', strokeWidth: 3, strokeDashArray: [10, 7] };
-  const shape = kind === 'logo' ? new fabric.Rect({ ...look, width: r * 2, height: r * 2, rx: 18, ry: 18 }) : new fabric.Circle({ ...look, radius: r });
+  const shape = kind === 'photo' ? new fabric.Rect({ ...look, width: 520, height: 390 })
+    : kind === 'logo' ? new fabric.Rect({ ...look, width: r * 2, height: r * 2, rx: 18, ry: 18 }) : new fabric.Circle({ ...look, radius: r });
   const txt = new fabric.Text(label, { originX: 'center', originY: 'center', fontFamily: 'Noto Sans JP', fontWeight: 700, fontSize: 34, fill: 'rgba(255,255,255,0.7)' });
   const n = canvas.getObjects().filter(o => o.role === 'slot' && slotKindOf(o) === kind).length;
-  addObj(new fabric.Group([shape, txt], { role: 'slot', slotId: kind + '-' + uid().slice(-6), slotKind: kind, slotGhost: true, slotPad: 2, name: label + (n ? n + 1 : '') + 'の枠' }));
+  addObj(new fabric.Group([shape, txt], { role: 'slot', slotId: kind + '-' + uid().slice(-6), slotKind: kind, slotGhost: true, slotPad: kind === 'photo' ? 0 : 2, name: label + (n ? n + 1 : '') + 'の枠' }));
   S.dirty = true;
 }
 $$('[data-slot-add]').forEach(t => t.addEventListener('click', () => addSlotFrame(t.dataset.slotAdd)));
@@ -2237,6 +2243,8 @@ function applyFx(img) {
   if (f.sepia) arr.push(new F.Sepia());
   if (f.tint) arr.push(new F.BlendColor({ color: f.tintColor || S.team.primary, mode: 'multiply', alpha: f.tint }));
   if (f.bl) arr.push(new F.Blur({ blur: f.bl }));
+  // recolor: every visible pixel takes the color, transparency is kept (white logo -> team color, …)
+  if (f.recolor) arr.push(new F.BlendColor({ color: f.recolor, mode: 'tint', alpha: 1 }));
   img.filters = arr; img.applyFilters(); canvas.requestRenderAll();
 }
 function targetImage() {
@@ -2450,10 +2458,13 @@ function textPropsHTML(o) {
       C.color('bgColor', '文字背景色', o.backgroundColor || o.textBackgroundColor || S.team.accent));
 }
 function imagePropsHTML(o) {
-  const f = o.fx || {}, slot = slotOf(o);
+  const f = o.fx || {}, slot = slotOf(o), photo = slot && slotKindOf(slot) === 'photo';
   return C.sec('fa-shield-halved', slot ? `${esc((slot.name || '枠').replace(/の枠$/, ''))}を差し替え` : '画像を差し替え',
-      assetSelectHTML('data-asset-pick', slot ? slotKindOf(slot) : 'emblem', '登録済みのエンブレム・ロゴから選ぶ…') +
+      (photo ? '<p class="text-[10px] text-slate-500">写真はドラッグで枠の中の位置を、四隅で大きさを調整できます。</p>' : assetSelectHTML('data-asset-pick', slot ? slotKindOf(slot) : 'emblem', '登録済みのエンブレム・ロゴから選ぶ…')) +
       C.btns([['replaceFile', '<i class="fa-solid fa-upload mr-1"></i>ファイルから差し替え']])) +
+    C.sec('fa-palette', 'ロゴ・画像の色を変える',
+      C.color('fx_recolor', f.recolor ? '色（透明部分はそのまま）' : '色を選ぶと全体がその色になります', f.recolor || '#ffffff') +
+      (f.recolor ? C.btns([['recolorOff', '<i class="fa-solid fa-rotate-left mr-1"></i>元の色に戻す']]) : '')) +
     C.sec('fa-wand-magic-sparkles', 'フィルタープリセット',
       `<div class="grid grid-cols-4 gap-1">${Object.keys(FX_PRESETS).map(k => `<button class="mini-btn !px-1" data-act="fx:${k}">${FX_LABEL[k]}</button>`).join('')}</div>` +
       `<button class="mini-btn" data-act="toCraft"><i class="fa-solid fa-camera-retro mr-1 text-accent"></i>PhotoCraftで本格編集</button>`) +
@@ -2466,12 +2477,14 @@ function imagePropsHTML(o) {
       C.btns([['cover', '<i class="fa-solid fa-expand mr-1"></i>全面に敷く'], ['contain', '<i class="fa-solid fa-compress mr-1"></i>全体を表示'], ['fit80', '80%サイズ'], ['zoomShow', '<i class="fa-solid fa-magnifying-glass-minus mr-1"></i>四隅が見えるよう縮小表示']]) +
       C.color('fx_tintColor', 'カラー重ねの色', f.tintColor || S.team.primary));
 }
+const SLOT_KINDS = [['emblem', 'エンブレム'], ['logo', 'ロゴ'], ['photo', '写真（枠いっぱいに切り抜き）']];
 function slotPropsHTML(o) {
+  const photo = slotKindOf(o) === 'photo';
   return C.sec('fa-image', '画像の枠',
     `<p class="text-[11px] text-slate-400 leading-relaxed">${esc((o.name || '枠').replace(/の枠$/, ''))}を入れる枠です。${o.filled ? '画像が入っています（選ぶと差し替えます）。' : 'ここに画像を入れられます。'}</p>` +
-    assetSelectHTML('data-asset-pick', slotKindOf(o), '登録済みのエンブレム・ロゴから選ぶ…') +
-    C.btns([['slotUpload', '<i class="fa-solid fa-upload mr-1"></i>この枠に画像を入れる']]) +
-    (CUR.kind === 'preset' ? `<div class="mt-2">${C.select('slotKind', '入れる画像の種類', ASSET_KINDS, slotKindOf(o))}</div>` +
+    (photo ? '' : assetSelectHTML('data-asset-pick', slotKindOf(o), '登録済みのエンブレム・ロゴから選ぶ…')) +
+    C.btns([['slotUpload', `<i class="fa-solid fa-upload mr-1"></i>この枠に${photo ? '写真' : '画像'}を入れる`]]) +
+    (CUR.kind === 'preset' ? `<div class="mt-2">${C.select('slotKind', '入れる画像の種類', SLOT_KINDS, slotKindOf(o))}</div>` +
       `<p class="text-[10px] text-slate-500 leading-relaxed">枠は四隅をドラッグして大きさを変えられます。投稿でこのデザインを使うと、アップロードした画像や登録済みのエンブレム・ロゴがこの枠に収まります。</p>` : ''));
 }
 function shapePropsHTML(o) {
@@ -2546,8 +2559,10 @@ function setProp(k, v) {
     default:
       if (k.startsWith('fx_')) {
         const key = k.slice(3); o.fx = Object.assign({}, o.fx);
-        o.fx[key] = (key === 'gray' || key === 'sepia' || key === 'tintColor') ? v : +v;
+        const had = !!o.fx.recolor;
+        o.fx[key] = (key === 'gray' || key === 'sepia' || key === 'tintColor' || key === 'recolor') ? v : +v;
         applyFx(o);
+        if (key === 'recolor' && !had) renderProps(); // shows the reset button once
       }
   }
   o.setCoords && o.setCoords();
@@ -2571,6 +2586,7 @@ function propAction(act) {
     case 'replaceFile': pickFile().then(url => url && replaceImage(o, url)); return;
     case 'cover': coverImage(o); canvas.moveTo(o, 1); break;
     case 'zoomShow': zoomToShow(o); return;
+    case 'recolorOff': o.fx = Object.assign({}, o.fx); delete o.fx.recolor; applyFx(o); renderProps(); break;
     case 'contain': { const s = Math.min(S.W / o.width, S.H / o.height); o.set({ scaleX: s, scaleY: s, angle: 0, fullBleed: false }); o.setPositionByOrigin(new fabric.Point(S.W / 2, S.H / 2), 'center', 'center'); break; }
     case 'fit80': { const s = Math.min(S.W * 0.8 / o.width, S.H * 0.8 / o.height); o.set({ scaleX: s, scaleY: s, fullBleed: false }); o.setPositionByOrigin(new fabric.Point(S.W / 2, S.H / 2), 'center', 'center'); break; }
     case 'centerH': { const c = o.getCenterPoint(); o.setPositionByOrigin(new fabric.Point(S.W / 2, c.y), 'center', 'center'); break; }
