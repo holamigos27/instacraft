@@ -926,6 +926,32 @@
   </div>
 </div>
 
+<!-- ============ EMBLEM / LOGO EDITOR (PhotoCraft / VectorCraft) ============ -->
+<div class="modal !p-0" id="assetCraftModal" data-locked>
+  <div class="w-full h-full flex flex-col bg-ink">
+    <div class="h-12 flex items-center gap-2 px-3 border-b border-line bg-panel/80 flex-shrink-0">
+      <i class="fa-solid fa-pen-ruler text-accent"></i>
+      <span class="font-bold text-white text-sm truncate" id="acTitle"></span>
+      <span class="text-[11px] text-slate-400 truncate hidden md:inline" id="acHint"></span>
+      <div class="ml-auto flex items-center gap-2">
+        <div class="hidden items-center gap-2 bg-ink border border-accent/50 rounded-lg pl-1 pr-2 py-1" id="acResult">
+          <img id="acResultImg" class="h-8 w-8 object-contain rounded checker">
+          <span class="text-[11px] text-slate-300">書き出しを受け取りました</span>
+          <button class="btn btn-accent !py-1" id="acSaveOver"><i class="fa-solid fa-floppy-disk"></i>上書き保存</button>
+          <button class="btn !py-1" id="acSaveCopy"><i class="fa-regular fa-clone"></i>コピーとして保存</button>
+        </div>
+        <button class="btn hidden" id="acPull"><i class="fa-solid fa-file-export"></i>VectorCraftから取り込む</button>
+        <button class="btn" id="acClose"><i class="fa-solid fa-xmark"></i>閉じる</button>
+      </div>
+    </div>
+    <div class="relative flex-1 min-h-0">
+      <iframe id="acFrame-photocraft" class="absolute inset-0 w-full h-full hidden border-0" title="PhotoCraft"></iframe>
+      <iframe id="acFrame-vectorcraft" class="absolute inset-0 w-full h-full hidden border-0" title="VectorCraft"></iframe>
+      <div id="acLoading" class="absolute inset-0 hidden items-center justify-center gap-3 text-sm text-slate-300 bg-ink"><i class="fa-solid fa-circle-notch fa-spin text-accent"></i><span>読み込み中…（初回は数十秒かかることがあります）</span></div>
+    </div>
+  </div>
+</div>
+
 <!-- ============ CRAFT RESULT MODAL ============ -->
 <div class="modal" id="craftModal">
   <div class="w-[520px] bg-panel border border-line rounded-2xl p-6 space-y-4">
@@ -1320,7 +1346,7 @@ fabric.Text.prototype._setTextStyles = function (ctx, charStyle, forMeasuring) {
 const canvas = new fabric.Canvas('editor', {
   preserveObjectStacking: true, backgroundColor: '',
   selectionColor: 'rgba(200,255,46,0.08)', selectionBorderColor: '#c8ff2e', selectionLineWidth: 1,
-  altSelectionKey: 'altKey', targetFindTolerance: 6,
+  altSelectionKey: null, targetFindTolerance: 6,
   // the selection frame and handles are drawn after the artboard clip, so they show outside it too
   controlsAboveOverlay: true
 });
@@ -1587,6 +1613,30 @@ function updateUndoUI() { $('#btnUndo').disabled = HIST.idx <= 0; $('#btnRedo').
 function markDirty(o) { if (!HIST.lock && o && o.type !== 'image' && o.role !== 'bg') S.dirty = true; }
 canvas.on('object:added', e => { if (!HIST.lock) { markDirty(e.target); saveHistory(); } refreshLayersSoon(); });
 canvas.on('object:removed', e => { if (!HIST.lock) { markDirty(e.target); saveHistory(); } refreshLayersSoon(); });
+canvas.on('mouse:down', () => {
+  const el = document.activeElement;
+  if (el && el !== canvas.hiddenTextarea && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) el.blur();
+});
+/* Alt+drag (like Illustrator): the object stays and a copy is left where it started */
+const ALT_DUP = { done: false };
+canvas.on('mouse:down', e => { ALT_DUP.done = false; });
+canvas.on('object:moving', e => {
+  const ev = e.e, o = e.target, orig = e.transform?.original;
+  if (ALT_DUP.done || !ev?.altKey || !o || !orig || o.locked) return;
+  ALT_DUP.done = true;
+  const idx = canvas.getObjects().indexOf(o);
+  o.clone(cl => {
+    cl.set({ left: orig.left, top: orig.top });
+    if (cl.type === 'activeSelection') {
+      cl.canvas = canvas;
+      const items = cl.getObjects();
+      cl.forEachObject(x => { freshCopy(x); });
+      cl._restoreObjectsState(); // absolute positions, as when a selection is dropped
+      items.forEach(x => { canvas.add(x); x.setCoords(); });
+    } else { freshCopy(cl); canvas.insertAt(cl, Math.max(0, idx)); cl.setCoords(); }
+    canvas.requestRenderAll(); saveHistory(); refreshLayersSoon();
+  }, PROPS);
+});
 canvas.on('object:modified', e => {
   const t = e.target;
   if (t && t.type === 'image') t.fullBleed = false;
@@ -2354,36 +2404,42 @@ $('#quickStage').addEventListener('drop', e => handleFiles(e.dataTransfer.files)
 $('#dropZone').addEventListener('drop', e => handleFiles(e.dataTransfer.files));
 document.addEventListener('paste', e => {
   if (!CUR.post || S.tab !== 'quick' || $('.modal.open')) return;
+  const el = document.activeElement, typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el?.tagName) || el?.isContentEditable;
+  if (typing || canvas.getActiveObject()?.isEditing) return; // ordinary text paste
+  // objects copied here leave a marker in the system clipboard; anything copied later replaces it
+  const text = e.clipboardData?.getData('text/plain') || '';
+  if (OBJ_CLIP.obj && text === OBJ_CLIP.mark) { e.preventDefault(); pasteSelection(); return; }
   const files = [...(e.clipboardData?.items || [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile());
   if (files.length) { e.preventDefault(); handleFiles(files); return; }
-  // otherwise: what was copied on the canvas (not while typing in a field or a text)
-  const el = document.activeElement, typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el?.tagName) || el?.isContentEditable;
-  if (!typing && !canvas.getActiveObject()?.isEditing && OBJ_CLIP.obj) { e.preventDefault(); pasteSelection(); }
+  if (OBJ_CLIP.obj && !text) { e.preventDefault(); pasteSelection(); } // the marker could not be written
 });
 
 /* ---------------- copy / cut / paste / select all (canvas objects) ---------------- */
-const OBJ_CLIP = { obj: null, n: 0 };
+const OBJ_CLIP = { obj: null, n: 0, mark: '' };
 function copySelection(cut = false) {
   const o = canvas.getActiveObject(); if (!o || o.role === 'bg') return;
+  // the system clipboard gets a marker, so Ctrl+V pastes these objects and not an older screenshot
+  OBJ_CLIP.mark = 'instaCRAFT-objects:' + uid();
+  navigator.clipboard?.writeText(OBJ_CLIP.mark).catch(() => { OBJ_CLIP.mark = ''; });
   o.clone(cl => {
     OBJ_CLIP.obj = cl; OBJ_CLIP.n = 0;
     if (cut) { canvas.getActiveObjects().forEach(x => canvas.remove(x)); canvas.discardActiveObject(); canvas.requestRenderAll(); saveHistory(); refreshLayersSoon(); }
     toast(cut ? '切り取りました（Ctrl+V で貼り付け）' : 'コピーしました（Ctrl+V で貼り付け）', cut ? 'fa-scissors' : 'fa-copy');
   }, PROPS);
 }
+/* a copy is a new object: it does not belong to a slot, and a copied frame gets its own id */
+function freshCopy(x) {
+  x.fullBleed = false; delete x.inSlot;
+  if (x.role === 'slot') { x.slotId = (x.slotKind || 'slot') + '-' + uid().slice(-6); x.filled = false; }
+  if (x.type === 'image' && x.fx) applyFx(x);
+}
 function pasteSelection() {
   OBJ_CLIP.obj.clone(cl => {
     const off = 30 * ++OBJ_CLIP.n;
     canvas.discardActiveObject();
     cl.set({ left: cl.left + off, top: cl.top + off, evented: true });
-    // a pasted copy is a new object: it does not belong to a slot, and a copied frame gets its own id
-    const fresh = x => {
-      x.fullBleed = false; delete x.inSlot;
-      if (x.role === 'slot') { x.slotId = (x.slotKind || 'slot') + '-' + uid().slice(-6); x.filled = false; }
-      if (x.type === 'image' && x.fx) applyFx(x);
-    };
-    if (cl.type === 'activeSelection') { cl.canvas = canvas; cl.forEachObject(x => { fresh(x); canvas.add(x); }); cl.setCoords(); }
-    else { fresh(cl); canvas.add(cl); }
+    if (cl.type === 'activeSelection') { cl.canvas = canvas; cl.forEachObject(x => { freshCopy(x); canvas.add(x); }); cl.setCoords(); }
+    else { freshCopy(cl); canvas.add(cl); }
     canvas.setActiveObject(cl); canvas.requestRenderAll(); saveHistory(); refreshLayersSoon();
   }, PROPS);
 }
@@ -2526,6 +2582,7 @@ $('#layerList').addEventListener('pointerdown', e => {
 window.addEventListener('pointermove', e => {
   const d = layerDrag; if (!d.row) return;
   if (!d.moved && Math.abs(e.clientY - d.y0) < 5) return;
+  document.body.style.cursor = d.moved ? (e.altKey ? 'copy' : 'grabbing') : document.body.style.cursor;
   if (!d.moved) { d.moved = true; d.row.classList.add('opacity-50'); $('#layerList').appendChild(layerLine); layerLine.classList.remove('hidden'); document.body.style.cursor = 'grabbing'; }
   e.preventDefault();
   // the gap the pointer is nearest to: before row p (p = rows.length → after the last)
@@ -2538,7 +2595,7 @@ window.addEventListener('pointermove', e => {
   // keep scrolling when dragged to the edge of the panel
   const sc = $('#layerList').closest('.overflow-y-auto'); if (sc) { const b = sc.getBoundingClientRect(); if (e.clientY < b.top + 30) sc.scrollTop -= 8; else if (e.clientY > b.bottom - 30) sc.scrollTop += 8; }
 });
-window.addEventListener('pointerup', () => {
+window.addEventListener('pointerup', e => {
   const d = layerDrag; if (!d.row) return;
   const row = d.row; d.row = null;
   layerLine.classList.add('hidden'); row.classList.remove('opacity-50'); document.body.style.cursor = '';
@@ -2547,6 +2604,16 @@ window.addEventListener('pointerup', () => {
   const objs = canvas.getObjects(), o = objs[+row.dataset.li]; if (!o || d.pos < 0) return;
   // the list without the dragged row, top first; the row goes in at the gap it was dropped on
   const order = layerRows().map(r => objs[+r.dataset.li]);
+  const bgs = objs.filter(x => x.role === 'bg').length;
+  if (e.altKey) {
+    // Alt: a copy goes in at the gap, the original stays
+    o.clone(cl => {
+      freshCopy(cl); canvas.insertAt(cl, bgs + order.length - d.pos);
+      pickFromLayers(cl); markDirty(cl); saveHistory(); refreshLayers();
+      toast('レイヤーを複製しました', 'fa-clone');
+    }, PROPS);
+    return;
+  }
   const from = order.indexOf(o), p = d.pos > from ? d.pos - 1 : d.pos;
   if (p === from) return;
   order.splice(from, 1); order.splice(p, 0, o);
@@ -3695,6 +3762,12 @@ async function renderAssetList(refresh) {
             <select class="field !py-1 !text-[11px]" data-asset-kind>${ASSET_KINDS.map(([v, l]) => `<option value="${v}" ${v === a.kind ? 'selected' : ''}>${l}</option>`).join('')}</select>
             <button class="btn !px-2 hover:!border-hot hover:!text-hot" data-asset-del title="削除"><i class="fa-regular fa-trash-can"></i></button>
           </div>
+          <div class="grid grid-cols-4 gap-1">
+            <button class="mini-btn !px-0" data-asset-dup title="複製"><i class="fa-regular fa-clone"></i></button>
+            <button class="mini-btn !px-0" data-asset-dl title="ダウンロード"><i class="fa-solid fa-download"></i></button>
+            <button class="mini-btn !px-0" data-asset-edit="photocraft" title="PhotoCraftで編集"><i class="fa-solid fa-camera-retro"></i></button>
+            <button class="mini-btn !px-0" data-asset-edit="vectorcraft" title="VectorCraftで編集"><i class="fa-solid fa-bezier-curve"></i></button>
+          </div>
         </div>`).join('') : `<p class="text-[11px] text-slate-500 col-span-full">まだ登録がありません</p>`}</div></div>`;
   }).join('');
 }
@@ -3707,11 +3780,108 @@ $('#assetList').addEventListener('change', async e => {
   renderAssetList();
 });
 $('#assetList').addEventListener('click', async e => {
+  const card = e.target.closest('[data-asset]'); if (!card) return;
+  const asset = assetById(card.dataset.asset); if (!asset) return;
+  if (e.target.closest('[data-asset-dup]')) {
+    await mutateAssets(list => { const i = list.findIndex(x => x.id === asset.id); list.splice(i + 1, 0, { ...asset, id: uid(), name: asset.name + ' のコピー' }); });
+    renderAssetList(); toast('複製しました', 'fa-clone'); return;
+  }
+  if (e.target.closest('[data-asset-dl]')) { downloadAsset(asset); return; }
+  const ed = e.target.closest('[data-asset-edit]');
+  if (ed) { openAssetCraft(asset, ed.dataset.assetEdit); return; }
   const b = e.target.closest('[data-asset-del]'); if (!b) return;
   const a = assetById(b.closest('[data-asset]').dataset.asset);
   if (!a || !confirm(`「${a.name}」を削除しますか？\n（すでに投稿に入っている画像はそのまま残ります）`)) return;
   await mutateAssets(list => { const i = list.findIndex(x => x.id === a.id); if (i >= 0) list.splice(i, 1); });
   renderAssetList();
+});
+async function downloadAsset(a) {
+  try {
+    const blob = await (await fetch(a.url)).blob();
+    const ext = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' }[blob.type] || '.png';
+    const u = URL.createObjectURL(blob), el = document.createElement('a');
+    el.href = u; el.download = (a.name || 'image').replace(/[\\/:*?"<>|]/g, '_') + ext; el.click();
+    setTimeout(() => URL.revokeObjectURL(u), 3000);
+  } catch (e) { toast('ダウンロードできませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 4000); }
+}
+/* emblems and logos open in their own PhotoCraft / VectorCraft window; the export comes back here */
+const AC = { asset: null, k: null, blob: null };
+function loadCraftInto(f, k) {
+  if (f._ready) return Promise.resolve();
+  if (f._loading) return f._loading;
+  if (k === 'photocraft') preferPhotoCraftJapanese();
+  f._loading = new Promise(res => {
+    f.addEventListener('load', async () => {
+      const win = f.contentWindow;
+      if (k === 'photocraft') hookPhotoCraftExports(win);
+      for (let n = 0; n < 240; n++) {
+        try {
+          if (k === 'photocraft' && !win.document.getElementById('photocraft_loading')) break;
+          if (k === 'vectorcraft' && win.vectorcraft) { await win.vectorcraft.request('ui.inspect'); break; }
+        } catch (e) { /* not ready yet */ }
+        await sleep(500);
+      }
+      f._ready = true; res();
+    }, { once: true });
+    f.src = CRAFT[k].src;
+  });
+  return f._loading;
+}
+async function openAssetCraft(a, k) {
+  if (location.protocol === 'file:') return toast('PhotoCraft / VectorCraft は start.bat（ローカルサーバー）から開いたときに使えます', 'fa-triangle-exclamation', 'text-hot', 4500);
+  Object.assign(AC, { asset: a, k, blob: null });
+  $('#acTitle').textContent = `${a.name} を ${CRAFT[k].name} で編集`;
+  $('#acHint').textContent = k === 'photocraft' ? '編集後、ファイル › 書き出し › PNG（クイック書き出し）で戻ります' : '編集後、右上の「VectorCraftから取り込む」を押してください';
+  $('#acPull').classList.toggle('hidden', k !== 'vectorcraft');
+  $('#acResult').classList.add('hidden'); $('#acResult').classList.remove('flex');
+  ['photocraft', 'vectorcraft'].forEach(x => $('#acFrame-' + x).classList.toggle('hidden', x !== k));
+  openModal('assetCraftModal');
+  const f = $('#acFrame-' + k);
+  if (!f._ready) { $('#acLoading').classList.remove('hidden'); $('#acLoading').classList.add('flex'); }
+  await loadCraftInto(f, k);
+  $('#acLoading').classList.add('hidden'); $('#acLoading').classList.remove('flex');
+  try {
+    const blob = await (await fetch(a.url)).blob();
+    const name = (a.name || 'emblem').replace(/[\\/:*?"<>|]/g, '_') + '.png', win = f.contentWindow;
+    if (k === 'vectorcraft') win.vectorcraft.openFile(name, new Uint8Array(await blob.arrayBuffer()));
+    else {
+      const cv = win.document.getElementById('photocraft_canvas');
+      const dt = new win.DataTransfer(); dt.items.add(new win.File([blob], name, { type: blob.type || 'image/png' }));
+      const r = cv.getBoundingClientRect(), opt = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.width / 2, clientY: r.height / 2 };
+      ['dragenter', 'dragover', 'drop'].forEach(t => cv.dispatchEvent(new win.DragEvent(t, opt)));
+    }
+  } catch (e) { toast(`${CRAFT[k].name}に画像を渡せませんでした`, 'fa-triangle-exclamation', 'text-hot'); }
+}
+function onAssetCraftExport(blob) {
+  AC.blob = blob;
+  $('#acResultImg').src = URL.createObjectURL(blob);
+  $('#acResult').classList.remove('hidden'); $('#acResult').classList.add('flex');
+}
+async function saveAssetCraft(asCopy) {
+  if (!AC.blob || !AC.asset) return;
+  try {
+    const data = await assetDataURL(new File([AC.blob], 'edit.png', { type: AC.blob.type || 'image/png' }));
+    const url = REMOTE ? await uploadImage(data) : data, src = AC.asset;
+    await mutateAssets(list => {
+      if (asCopy) { const i = list.findIndex(x => x.id === src.id); list.splice(i + 1, 0, { ...src, id: uid(), name: src.name + '（編集）', url }); }
+      else { const x = list.find(y => y.id === src.id); if (x) x.url = url; }
+    });
+    AC.blob = null; $('#acResult').classList.add('hidden'); $('#acResult').classList.remove('flex');
+    renderAssetList(); renderAssetTiles();
+    toast(asCopy ? 'コピーとして保存しました' : '上書き保存しました（STAFF全員で共有）', 'fa-floppy-disk');
+  } catch (e) { toast('保存できませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 4000); }
+}
+$('#acSaveOver').addEventListener('click', () => saveAssetCraft(false));
+$('#acSaveCopy').addEventListener('click', () => saveAssetCraft(true));
+$('#acClose').addEventListener('click', () => {
+  if (AC.blob && !confirm('受け取った書き出しを保存せずに閉じますか？')) return;
+  AC.asset = null; AC.blob = null; closeModal('assetCraftModal');
+});
+$('#acPull').addEventListener('click', async () => {
+  try {
+    const r = await $('#acFrame-vectorcraft').contentWindow.vectorcraft.request('app.export', { format: 'png', ppi: 72 });
+    onAssetCraftExport(await dataURLtoBlob('data:image/png;base64,' + r.dataBase64));
+  } catch (e) { toast('VectorCraftにドキュメントが開かれていません（' + e.message + '）', 'fa-triangle-exclamation', 'text-hot', 4000); }
 });
 /* a dropdown of the registry; the kind asked for comes first */
 function assetSelectHTML(attr, kind, placeholder) {
@@ -4130,6 +4300,7 @@ async function pullFromVectorCraft() {
 }
 let craftPending = null;
 function onCraftExport(k, blob, name) {
+  if (AC.asset && $('#assetCraftModal').classList.contains('open')) return onAssetCraftExport(blob);
   const fr = new FileReader();
   fr.onload = () => {
     craftPending = { k, url: fr.result };
