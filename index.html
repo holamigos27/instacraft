@@ -2057,10 +2057,10 @@ const presetName = key => key.startsWith('c:') ? (customById(key.slice(2))?.titl
 const presetType = key => key.startsWith('c:') ? customById(key.slice(2))?.type : PRESETS[key]?.type;
 
 /* "{対戦相手}" / "{opponent}" → the post's info; unknown names stay as written */
-function fillInfo(text) {
-  const byName = { team: S.team.name, account: S.team.account, 'チーム名': S.team.name, 'アカウント': '@' + S.team.account,
-    'PK結果': S.info.pk ? `(PK ${S.info.pkUs ?? ''}-${S.info.pkThem ?? ''})` : '' };
-  infoFields.forEach(f => { byName[f.key] = S.info[f.key] ?? ''; byName[f.label] = S.info[f.key] ?? ''; });
+function fillInfo(text, info = S.info, team = S.team) {
+  const byName = { team: team.name, account: team.account, 'チーム名': team.name, 'アカウント': '@' + team.account,
+    'PK結果': info.pk ? `(PK ${info.pkUs ?? ''}-${info.pkThem ?? ''})` : '' };
+  infoFields.forEach(f => { byName[f.key] = info[f.key] ?? ''; byName[f.label] = info[f.key] ?? ''; });
   return String(text).replace(/\{([^{}\n]+)\}/g, (m, k) => (k in byName ? byName[k] : m));
 }
 const hasPlaceholder = t => /\{[^{}\n]+\}/.test(t || '');
@@ -3199,8 +3199,8 @@ function setPostType(type, variant = 0, fromPreset = false) {
   insertTemplate(fromPreset);
 }
 /* with a PK shoot-out, "(PK 3-2)" follows the score line of any template that has no {PK結果} */
-function withPkResult(tpl) {
-  if (!S.info.pk || tpl.includes('{PK結果}')) return tpl;
+function withPkResult(tpl, info = S.info) {
+  if (!info.pk || tpl.includes('{PK結果}')) return tpl;
   const lines = tpl.split('\n'), n = lines.findIndex(l => l.includes('{自チームスコア}') && l.includes('{相手スコア}'));
   if (n < 0) return tpl;
   lines[n] = lines[n].replace(/\s*$/, ' {PK結果}');
@@ -3222,7 +3222,45 @@ function insertTemplate(ask = true) {
   if (cur && cur !== S.lastTemplate.trim() && ask && !confirm('現在のキャプションをテンプレートで置き換えますか？')) return;
   const txt = captionTemplate();
   cap.value = txt; S.lastTemplate = txt;
+  noteCaptionInfo();
   onCaptionChange();
+}
+/* the post info the caption was written with; later edits of the info are carried into the caption */
+const captionInfoNow = () => ({ info: { ...S.info }, team: { name: S.team.name, account: S.team.account } });
+function noteCaptionInfo() { S.capInfo = captionInfoNow(); if (CUR.post && CUR.kind === 'post') CUR.post.capInfo = S.capInfo; }
+/* the caption follows the info even after it was edited by hand:
+   1) every template line with {項目} that is still in the caption as it was written gets rewritten;
+   2) names, dates and places still found elsewhere in it are replaced (not inside #hashtags) */
+function syncCaptionInfo() {
+  if (CUR.kind !== 'post' || !S.capInfo) { noteCaptionInfo(); return; }
+  const was = S.capInfo, now = captionInfoNow();
+  let v = cap.value;
+  if (v.trim()) {
+    const tpl = curType()?.templates?.[+$('#capVariant').value || 0]?.text || '';
+    const oldLines = withPkResult(tpl, was.info).split('\n'), newLines = withPkResult(tpl, now.info).split('\n');
+    const lines = v.split('\n');
+    oldLines.forEach((ot, n) => {
+      const nt = newLines.find(x => x.replace(' {PK結果}', '') === ot.replace(' {PK結果}', '')) ?? newLines[n];
+      if (!hasPlaceholder(ot) || nt == null) return;
+      const before = fillInfo(ot, was.info, was.team).trimEnd(), after = fillInfo(nt, now.info, now.team).trimEnd();
+      if (before === after || !before.trim()) return;
+      lines.forEach((l, i) => { if (l.trimEnd() === before) lines[i] = after; });
+    });
+    v = lines.join('\n');
+    const swap = (a, b) => {
+      a = String(a ?? '').trim(); b = String(b ?? '').trim();
+      if (a.length < 3 || a === b || /^\d+$/.test(a)) return;
+      v = v.replace(new RegExp('(?<!#)' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), b);
+    };
+    ['competition', 'opponent', 'venue', 'date', 'time', 'sponsor'].forEach(k => swap(was.info[k], now.info[k]));
+    swap(was.team.name, now.team.name);
+  }
+  S.capInfo = now; if (CUR.post) CUR.post.capInfo = now;
+  if (v !== cap.value) {
+    const wasTemplate = cap.value.trim() === S.lastTemplate.trim();
+    cap.value = v; if (wasTemplate) S.lastTemplate = v;
+    onCaptionChange();
+  }
 }
 function onCaptionChange(from) {
   const v = cap.value;
@@ -3688,8 +3726,8 @@ function scheduleInfoTexts() {
   infoTextT = setTimeout(() => {
     if (!CUR.post) return;
     if (fillTplTexts()) saveHistory();
-    // a caption still exactly as the template made it follows too (an edited one is left alone)
-    if (CUR.kind === 'post' && S.lastTemplate && cap.value.trim() === S.lastTemplate.trim()) insertTemplate(false);
+    syncCaptionInfo(); // the caption follows the info as well
+
   }, 250);
 }
 $('#infoFields').addEventListener('input', e => {
@@ -5129,6 +5167,7 @@ async function openDoc(kind, id) {
     S.postType = typeById(doc.type) ? doc.type : TYPES[0].id; $('#postType').value = S.postType; renderVariants();
     $('#postDate').value = doc.date || '';
     cap.value = doc.caption || ''; S.lastTemplate = doc.lastTemplate || '';
+    S.capInfo = doc.capInfo || captionInfoNow(); // older posts: from now on
   } else {
     S.info = { ...INFO_DEFAULT, ...store.get('info', {}) };
     $('#presetType').value = typeById(doc.type) ? doc.type : TYPES[0].id;
