@@ -193,6 +193,8 @@
   .pv-dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.3); }
   .pv-dot.on { background:#3897f0; }
 
+  input[data-combo] { padding-right: 26px !important; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2394a3b8' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 9px center; }
+  #comboList { position: fixed; z-index: 80; max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
   .modal { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.8); backdrop-filter: blur(4px); padding:24px; }
   .modal.open { display:flex; }
   .log-line { font: 11px/1.6 ui-monospace, Consolas, monospace; }
@@ -639,12 +641,12 @@
           <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-flag-checkered"></i>試合情報</span>
             <a href="#/masters" class="tracking-normal normal-case font-normal text-[10px] text-accent hover:underline">リストを管理</a></div>
           <div class="card space-y-2">
-            <div><label class="lbl">大会名</label><input class="field select-text" id="miCompetition" list="dlCompetitions" placeholder="リストから選ぶか入力"></div>
+            <div><label class="lbl">大会名</label><input class="field select-text" id="miCompetition" autocomplete="off" data-combo="competitions" placeholder="リストから選ぶか入力"></div>
             <div class="grid grid-cols-2 gap-2">
               <div><label class="lbl">日付</label><input type="date" class="field" id="miDate"></div>
-              <div><label class="lbl">会場名</label><input class="field select-text" id="miVenue" list="dlVenues" placeholder="リストから選ぶか入力"></div>
+              <div><label class="lbl">会場名</label><input class="field select-text" id="miVenue" autocomplete="off" data-combo="venues" placeholder="リストから選ぶか入力"></div>
             </div>
-            <div><label class="lbl">対戦相手</label><input class="field select-text" id="miOpponent" list="dlOpponents" placeholder="リストから選ぶか入力"></div>
+            <div><label class="lbl">対戦相手</label><input class="field select-text" id="miOpponent" autocomplete="off" data-combo="opponents" placeholder="リストから選ぶか入力"></div>
             <div class="flex items-center gap-2 text-[10px] text-slate-500 min-h-[16px]" id="miEmblem"></div>
             <button class="btn btn-accent w-full" id="btnMatchApply"><i class="fa-solid fa-arrows-rotate"></i>反映（キャプションとデザインに自動入力）</button>
           </div>
@@ -3502,6 +3504,63 @@ function renderDatalists() {
   $('#dlVenues').innerHTML = opts(MASTERS.venues);
   $('#dlOpponents').innerHTML = opts(MASTERS.opponents);
 }
+/* competition / venue / opponent fields: a dropdown of the whole registered list (the browser's
+   own list only shows entries matching what is already typed). Typing narrows it; the wheel scrolls. */
+const comboList = document.createElement('div');
+comboList.id = 'comboList';
+comboList.className = 'hidden bg-panel2 border border-line rounded-lg shadow-2xl py-1 text-[12px] thin-y';
+document.body.appendChild(comboList);
+const COMBO = { input: null, items: [], hi: -1, typed: false };
+function comboOpen(input, typed = false) {
+  COMBO.input = input; COMBO.typed = typed;
+  const all = (MASTERS[input.dataset.combo] || []).map(x => x.name);
+  const q = input.value.trim().toLowerCase();
+  // until something is typed, everything is offered (the current value is just marked)
+  COMBO.items = typed && q ? all.filter(n => n.toLowerCase().includes(q)) : all;
+  if (!COMBO.items.length) { comboClose(); return; }
+  COMBO.hi = COMBO.items.findIndex(n => n === input.value);
+  comboList.innerHTML = COMBO.items.map((n, i) => `<div class="px-3 py-1.5 cursor-pointer truncate ${i === COMBO.hi ? 'bg-accent/15 text-accent' : 'text-slate-200 hover:bg-white/5'}" data-ci="${i}" title="${esc(n)}">${n === input.value ? '<i class="fa-solid fa-check text-[9px] mr-1.5"></i>' : ''}${esc(n)}</div>`).join('');
+  comboPlace();
+  comboList.classList.remove('hidden');
+  comboList.querySelector(`[data-ci="${Math.max(0, COMBO.hi)}"]`)?.scrollIntoView({ block: 'nearest' });
+}
+/* under the field (above it when there is no room), following it when the panel scrolls */
+function comboPlace() {
+  const input = COMBO.input; if (!input) return;
+  const r = input.getBoundingClientRect(), below = window.innerHeight - r.bottom;
+  if (r.bottom < 0 || r.top > window.innerHeight || !r.width) return comboClose();
+  Object.assign(comboList.style, { left: r.left + 'px', width: r.width + 'px', top: '', bottom: '' });
+  if (below < 200 && r.top > below) comboList.style.bottom = (window.innerHeight - r.top + 4) + 'px'; else comboList.style.top = (r.bottom + 4) + 'px';
+}
+function comboClose() { comboList.classList.add('hidden'); COMBO.input = null; }
+function comboPick(i) {
+  const input = COMBO.input, v = COMBO.items[i]; if (!input || v == null) return;
+  input.value = v; input.dispatchEvent(new Event('input', { bubbles: true })); comboClose();
+}
+function comboHighlight(i) {
+  COMBO.hi = Math.max(0, Math.min(COMBO.items.length - 1, i));
+  comboList.querySelectorAll('[data-ci]').forEach((el, n) => { el.classList.toggle('bg-white/10', n === COMBO.hi); });
+  comboList.querySelector(`[data-ci="${COMBO.hi}"]`)?.scrollIntoView({ block: 'nearest' });
+}
+document.addEventListener('focusin', e => { if (e.target.matches?.('input[data-combo]')) comboOpen(e.target); });
+document.addEventListener('mousedown', e => {
+  if (comboList.contains(e.target)) { e.preventDefault(); const it = e.target.closest('[data-ci]'); if (it) comboPick(+it.dataset.ci); return; }
+  if (e.target.matches?.('input[data-combo]') && document.activeElement === e.target) { COMBO.input ? comboClose() : comboOpen(e.target); }
+});
+document.addEventListener('input', e => { if (e.target.matches?.('input[data-combo]') && e.isTrusted) comboOpen(e.target, true); });
+document.addEventListener('focusout', e => { if (e.target === COMBO.input) setTimeout(() => { if (document.activeElement !== COMBO.input) comboClose(); }, 0); });
+document.addEventListener('keydown', e => {
+  if (!COMBO.input || e.target !== COMBO.input || comboList.classList.contains('hidden')) {
+    if (e.key === 'ArrowDown' && e.target.matches?.('input[data-combo]')) { e.preventDefault(); comboOpen(e.target); }
+    return;
+  }
+  if (e.key === 'ArrowDown') { e.preventDefault(); comboHighlight(COMBO.hi + 1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); comboHighlight(COMBO.hi - 1); }
+  else if (e.key === 'Enter' && COMBO.hi >= 0) { e.preventDefault(); comboPick(COMBO.hi); }
+  else if (e.key === 'Escape' || e.key === 'Tab') comboClose();
+}, true);
+window.addEventListener('resize', comboClose);
+document.addEventListener('scroll', e => { if (COMBO.input && !comboList.contains(e.target)) comboPlace(); }, true);
 
 /* ---------------- home: competitions, venues, opponents ---------------- */
 const MASTER_KINDS = [['competitions', '大会名', 'fa-trophy'], ['venues', '会場名', 'fa-location-dot'], ['opponents', '対戦相手', 'fa-shield']];
@@ -3599,7 +3658,7 @@ function renderInfoFields() {
       ${f.key === 'scorers'
         ? `<textarea class="field select-text resize-y leading-relaxed" rows="6" data-info="scorers" placeholder="1行に1人ずつ（例：Raise Nakagawa 1'）&#10;カンマ区切りでもOK">${esc(scorerLines(S.info.scorers))}</textarea>
            <div class="text-[10px] text-slate-500 mt-1">1行に1人。入力するとデザインにすぐ反映されます（<span data-scorer-count>${splitScorers(S.info.scorers).length}</span>人）</div>`
-        : `<input class="field select-text" data-info="${f.key}" ${{ competition: 'list="dlCompetitions"', venue: 'list="dlVenues"', opponent: 'list="dlOpponents"' }[f.key] || ''} value="${esc(S.info[f.key] ?? '')}">`}
+        : `<input class="field select-text" data-info="${f.key}" ${{ competition: 'data-combo="competitions" autocomplete="off"', venue: 'data-combo="venues" autocomplete="off"', opponent: 'data-combo="opponents" autocomplete="off"' }[f.key] || ''} value="${esc(S.info[f.key] ?? '')}">`}
     </div>` + (f.key === 'scoreThem' ? pkField : '')).join('');
   fillMatchInfo();
   $('#placeholderChips').innerHTML = placeholderList().map(p => `<span class="chip" data-ph="${esc(p.label)}" title="選択中のテキストに挿入">{${esc(p.label)}}</span>`).join('');
