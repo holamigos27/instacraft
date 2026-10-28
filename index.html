@@ -2057,7 +2057,9 @@ const presetName = key => key.startsWith('c:') ? (customById(key.slice(2))?.titl
 const presetType = key => key.startsWith('c:') ? customById(key.slice(2))?.type : PRESETS[key]?.type;
 
 /* "{対戦相手}" / "{opponent}" → the post's info; unknown names stay as written */
-function fillInfo(text, info = S.info, team = S.team) {
+/* the team for an image: its own name if one was typed in, else the team settings */
+const teamOf = (info = S.info) => ({ ...S.team, name: (info.teamName || '').trim() || S.team.name });
+function fillInfo(text, info = S.info, team = teamOf(info)) {
   const byName = { team: team.name, account: team.account, 'チーム名': team.name, 'アカウント': '@' + team.account,
     'PK結果': info.pk ? `(PK ${info.pkUs ?? ''}-${info.pkThem ?? ''})` : '' };
   infoFields.forEach(f => { byName[f.key] = info[f.key] ?? ''; byName[f.label] = info[f.key] ?? ''; });
@@ -2080,7 +2082,7 @@ function fillTplTexts() {
 function markInfoTexts(p, objs, k) {
   const i2 = {}; infoFields.forEach(f => { i2[f.key] = `{${f.label}}`; });
   let tplObjs;
-  try { const r = p.build({ W: S.W, H: S.H, t: { ...S.team, name: '{チーム名}' }, i: i2, k }); tplObjs = Array.isArray(r) ? r : r.objects; } catch (e) { return; }
+  try { const r = p.build({ W: S.W, H: S.H, t: { ...teamOf(), name: '{チーム名}' }, i: i2, k }); tplObjs = Array.isArray(r) ? r : r.objects; } catch (e) { return; }
   const texts = list => list.filter(o => o.type === 'textbox' && !o.scorerBox && o.role !== 'placeholder');
   const real = texts(objs), tpl = texts(tplObjs), used = new Set();
   real.forEach(o => {
@@ -2102,7 +2104,7 @@ async function applyPreset(key, opts = {}) {
   S.bg = p.bg(S.team);
   ensureBg(); applyBg();
   const k = S.H <= 1080 ? 0.8 : 1;
-  const res = p.build({ W: S.W, H: S.H, t: S.team, i: S.info, k });
+  const res = p.build({ W: S.W, H: S.H, t: teamOf(), i: S.info, k });
   const objs = Array.isArray(res) ? res : res.objects;
   markInfoTexts(p, objs, k);
   kept.forEach(img => { if (img.fullBleed) coverImage(img); canvas.add(img); });
@@ -3110,7 +3112,7 @@ function bindTeam() {
     el.addEventListener('input', () => {
       S.team[key] = key === 'account' ? el.value.replace(/^@/, '').trim() : el.value;
       store.set('team', S.team); renderPresetCards(); renderBgPane(); renderTagGroups(); updatePreviewMeta();
-      const tf = $('#infoFields [data-team-name]'); if (key === 'name' && tf && document.activeElement !== tf) tf.value = el.value;
+      const tf = $('#infoFields [data-team-name]'); if (key === 'name' && tf) tf.placeholder = el.value;
       if (key === 'name') scheduleInfoTexts();
     });
   });
@@ -3206,9 +3208,40 @@ function withPkResult(tpl, info = S.info) {
   lines[n] = lines[n].replace(/\s*$/, ' {PK結果}');
   return lines.join('\n');
 }
+const currentTemplateText = () => curType()?.templates?.[+$('#capVariant').value || 0]?.text || '';
+/* the images of the post, each with its info (the open one live) */
+function captionSlides() {
+  if (!CUR.post || CUR.kind !== 'post') return [{ id: 'one', info: { ...S.info } }];
+  return CUR.post.slides.map(sl => ({ id: sl.id, info: { ...slideInfoOf(sl) } }));
+}
+/* The template's match paragraph (the one with the score, or with team and opponent) is written once
+   per different match among the images; "{対戦相手}の皆様" elsewhere lists every opponent
+   ("A の皆様、B の皆様"). Everything else comes from the first image. Parts are keyed so later edits
+   of the info can be carried into a hand-edited caption. */
+function captionParts(tpl, slides) {
+  const capVals = info => ({ ...info, scorers: splitScorers(info.scorers).join('、') });
+  const fill = (t, info) => fillInfo(withPkResult(t, info), capVals(info), teamOf(info));
+  const paras = tpl.split(/\n{2,}/), first = slides[0]?.info || S.info;
+  let bi = paras.findIndex(x => /\{(自チームスコア|相手スコア)\}/.test(x));
+  if (bi < 0) bi = paras.findIndex(x => x.includes('{対戦相手}') && x.includes('{チーム名}'));
+  const blocks = [], opps = [];
+  if (bi >= 0) slides.forEach(sl => {
+    const text = fill(paras[bi], sl.info);
+    if (blocks.some(b => b.text === text)) return;
+    blocks.push({ key: 'b:' + sl.id, text });
+    const o = String(sl.info.opponent || '').trim(); if (o && !opps.includes(o)) opps.push(o);
+  });
+  const parts = [];
+  paras.forEach((x, i) => {
+    if (i === bi && blocks.length) { parts.push(...blocks); return; }
+    const t = blocks.length > 1 ? x.replace(/\{対戦相手\}([^、。,，\n{]*)/g, (m, suf) => opps.map(o => o + suf).join('、')) : x;
+    parts.push({ key: 'g' + i, text: fill(t, first) });
+  });
+  return parts;
+}
+const captionFromTemplate = (tpl, slides) => captionParts(tpl, slides).map(x => x.text).join('\n\n');
 function captionTemplate() {
-  const t = curType();
-  let txt = fillInfo(withPkResult(t?.templates?.[+$('#capVariant').value || 0]?.text || ''));
+  let txt = captionFromTemplate(currentTemplateText(), captionSlides());
   if ($('#autoTags').checked) {
     BLOCKS.filter(b => b.text.trim()).forEach(b => { txt += (txt ? '\n\n' : '') + b.text.trim(); });
     const common = tagGroups.find(g => g.id === 'common');
@@ -3225,42 +3258,54 @@ function insertTemplate(ask = true) {
   noteCaptionInfo();
   onCaptionChange();
 }
-/* the post info the caption was written with; later edits of the info are carried into the caption */
-const captionInfoNow = () => ({ info: { ...S.info }, team: { name: S.team.name, account: S.team.account } });
-function noteCaptionInfo() { S.capInfo = captionInfoNow(); if (CUR.post && CUR.kind === 'post') CUR.post.capInfo = S.capInfo; }
-/* the caption follows the info even after it was edited by hand:
-   1) every template line with {項目} that is still in the caption as it was written gets rewritten;
-   2) names, dates and places still found elsewhere in it are replaced (not inside #hashtags) */
+/* the infos the caption was written with; later edits of the info are carried into the caption */
+const captionSnapNow = () => ({ slides: captionSlides().map(x => ({ id: x.id, info: { ...x.info, teamName: teamOf(x.info).name } })) });
+function noteCaptionInfo() { S.capSnap = captionSnapNow(); if (CUR.post && CUR.kind === 'post') CUR.post.capSnap = S.capSnap; }
+/* The caption follows the info even after it was edited by hand: every part (match paragraph per
+   image, other paragraphs) still in the caption as it was written is rewritten — whole, or line by
+   line; a match that is new gets its paragraph after the previous one; names, dates and places
+   that no other image uses any more are replaced wherever they are (not inside #hashtags). */
 function syncCaptionInfo() {
-  if (CUR.kind !== 'post' || !S.capInfo) { noteCaptionInfo(); return; }
-  const was = S.capInfo, now = captionInfoNow();
+  if (CUR.kind !== 'post') return;
+  if (!S.capSnap) { noteCaptionInfo(); return; }
+  if (S.lastTemplate && cap.value.trim() === S.lastTemplate.trim()) { insertTemplate(false); return; } // untouched: write it again
+  const was = S.capSnap, now = captionSnapNow(), tpl = currentTemplateText();
+  const oldParts = captionParts(tpl, was.slides), newParts = captionParts(tpl, now.slides);
   let v = cap.value;
   if (v.trim()) {
-    const tpl = curType()?.templates?.[+$('#capVariant').value || 0]?.text || '';
-    const oldLines = withPkResult(tpl, was.info).split('\n'), newLines = withPkResult(tpl, now.info).split('\n');
-    const lines = v.split('\n');
-    oldLines.forEach((ot, n) => {
-      const nt = newLines.find(x => x.replace(' {PK結果}', '') === ot.replace(' {PK結果}', '')) ?? newLines[n];
-      if (!hasPlaceholder(ot) || nt == null) return;
-      const before = fillInfo(ot, was.info, was.team).trimEnd(), after = fillInfo(nt, now.info, now.team).trimEnd();
-      if (before === after || !before.trim()) return;
-      lines.forEach((l, i) => { if (l.trimEnd() === before) lines[i] = after; });
+    const replaceLines = (o, n) => {
+      const ol = o.split('\n'), nl = n.split('\n'), lines = v.split('\n');
+      ol.forEach((l, i) => { const to = nl[i]; if (to == null || l === to || !l.trim()) return; lines.forEach((x, j) => { if (x.trimEnd() === l.trimEnd()) lines[j] = to; }); });
+      v = lines.join('\n');
+    };
+    // parts that stayed: whole paragraph if it is still as written, else line by line
+    newParts.forEach(np => {
+      const op = oldParts.find(x => x.key === np.key);
+      if (!op || op.text === np.text) return;
+      if (v.includes(op.text)) v = v.replace(op.text, np.text); else replaceLines(op.text, np.text);
     });
-    v = lines.join('\n');
-    const swap = (a, b) => {
+    // a match that no longer has its own paragraph: drop it if untouched
+    oldParts.forEach(op => { if (!newParts.some(x => x.key === op.key) && op.key.startsWith('b:') && v.includes(op.text)) v = v.replace(op.text + '\n\n', '').replace('\n\n' + op.text, '').replace(op.text, ''); });
+    // a new match: after the paragraph before it
+    newParts.forEach((np, i) => {
+      if (oldParts.some(x => x.key === np.key) || v.includes(np.text)) return;
+      const prev = newParts.slice(0, i).reverse().find(x => v.includes(x.text));
+      if (prev) { const at = v.indexOf(prev.text) + prev.text.length; v = v.slice(0, at) + '\n\n' + np.text + v.slice(at); }
+    });
+    // names, dates, places: only values no image uses any more
+    const used = k => new Set(now.slides.map(x => String(x.info[k] ?? '').trim()));
+    const swap = (k, a, b) => {
       a = String(a ?? '').trim(); b = String(b ?? '').trim();
-      if (a.length < 3 || a === b || /^\d+$/.test(a)) return;
+      if (a.length < 3 || a === b || /^\d+$/.test(a) || used(k).has(a)) return;
       v = v.replace(new RegExp('(?<!#)' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), b);
     };
-    ['competition', 'opponent', 'venue', 'date', 'time', 'sponsor'].forEach(k => swap(was.info[k], now.info[k]));
-    swap(was.team.name, now.team.name);
+    now.slides.forEach(ns => {
+      const os = was.slides.find(x => x.id === ns.id); if (!os) return;
+      ['competition', 'opponent', 'venue', 'date', 'time', 'sponsor', 'teamName'].forEach(k => swap(k, os.info[k], ns.info[k]));
+    });
   }
-  S.capInfo = now; if (CUR.post) CUR.post.capInfo = now;
-  if (v !== cap.value) {
-    const wasTemplate = cap.value.trim() === S.lastTemplate.trim();
-    cap.value = v; if (wasTemplate) S.lastTemplate = v;
-    onCaptionChange();
-  }
+  S.capSnap = now; if (CUR.post) CUR.post.capSnap = now;
+  if (v !== cap.value) { cap.value = v; onCaptionChange(); }
 }
 function onCaptionChange(from) {
   const v = cap.value;
@@ -3513,9 +3558,22 @@ function showOpponentEmblem() {
   $('#miEmblem').innerHTML = a ? `<img src="${esc(a.url)}" class="w-5 h-5 object-contain">エンブレム「${esc(a.name)}」も相手エンブレムの枠に入ります`
     : o ? '<i class="fa-regular fa-circle"></i>この対戦相手にはエンブレムが未登録です' : '';
 }
+/* every image of a post has its own info (match, opponent, score, own team…); the post-level info
+   is the first image's, for lists and older code */
+function slideInfoOf(sl) {
+  if (!CUR.post) return S.info;
+  if (sl === CUR.post.slides[CUR.idx]) return S.info;
+  return { ...INFO_DEFAULT, ...(CUR.post.info || {}), ...(sl.info || {}) };
+}
+function commitInfo() {
+  if (!CUR.post || CUR.kind !== 'post') return;
+  const sl = CUR.post.slides[CUR.idx]; if (sl) sl.info = { ...S.info };
+  CUR.post.info = { ...slideInfoOf(CUR.post.slides[0]) };
+  schedulePostSave();
+}
 function setInfo(k, v) {
   S.info[k] = v; store.set('info', S.info);
-  if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
+  commitInfo();
   const el = $(`#infoFields [data-info="${k}"]`); if (el && document.activeElement !== el) el.value = v;
   updatePreviewMeta(); scheduleInfoTexts();
 }
@@ -3675,11 +3733,11 @@ $('#emojiBar').addEventListener('click', e => { const b = e.target.closest('[dat
 /* ---------------- post info ---------------- */
 function renderInfoFields() {
   const builtIn = new Set(INFO_FIELDS_DEFAULT.map(f => f.key));
-  // the own team's name sits just above the opponent (it is the shared チーム設定 value)
+  // the own team's name sits just above the opponent; each image may have its own (U-18, Ladies…)
   const teamField = `
     <div class="col-span-2">
-      <label class="lbl flex items-center justify-between gap-1"><span class="truncate">チーム名 <span class="text-slate-600">{チーム名}</span></span><span class="text-[9px] text-slate-600">チーム設定と共通</span></label>
-      <input class="field select-text" data-team-name value="${esc(S.team.name || '')}">
+      <label class="lbl flex items-center justify-between gap-1"><span class="truncate">チーム名 <span class="text-slate-600">{チーム名}</span></span><span class="text-[9px] text-slate-600">この画像のチーム（空欄＝チーム設定）</span></label>
+      <input class="field select-text" data-team-name value="${esc(S.info.teamName || '')}" placeholder="${esc(S.team.name || '')}">
     </div>`;
   const pkField = `
     <div class="col-span-2 rounded-lg border border-line/60 bg-ink/40 p-2">
@@ -3715,7 +3773,7 @@ function applyPkVisibility() {
 $('#infoFields').addEventListener('change', e => {
   if (!e.target.matches('[data-pk]')) return;
   S.info.pk = e.target.checked ? '1' : ''; store.set('info', S.info);
-  if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
+  commitInfo();
   $('#infoFields [data-pk-box]').classList.toggle('hidden', !e.target.checked);
   applyPkVisibility(); scheduleInfoTexts();
   if (e.target.checked) $('#infoFields [data-info="pkUs"]').focus();
@@ -3731,10 +3789,10 @@ function scheduleInfoTexts() {
   }, 250);
 }
 $('#infoFields').addEventListener('input', e => {
-  if (e.target.matches('[data-team-name]')) { const t = $('#tmName'); t.value = e.target.value; t.dispatchEvent(new Event('input')); return; }
+  if (e.target.matches('[data-team-name]')) { S.info.teamName = e.target.value; commitInfo(); scheduleInfoTexts(); updatePreviewMeta(); return; }
   const k = e.target.dataset.info; if (!k) return;
   S.info[k] = e.target.value; store.set('info', S.info);
-  if (CUR.post && CUR.kind === 'post') { CUR.post.info = { ...S.info }; schedulePostSave(); }
+  commitInfo();
   if (k in { competition: 1, venue: 1, opponent: 1, date: 1 }) fillMatchInfo();
   if (k !== 'scorers') scheduleInfoTexts();
   if (k === 'scorers') { const c = $('#infoFields [data-scorer-count]'); if (c) c.textContent = splitScorers(e.target.value).length; clearTimeout(scorerT); scorerT = setTimeout(refreshScorers, 300); }
@@ -4080,6 +4138,7 @@ async function loadSlide(i, { skipCapture = false, quiet = false } = {}) {
   if (!skipCapture && i !== CUR.idx) captureSlide();
   CUR.idx = i;
   const s = post.slides[i];
+  if (CUR.kind === 'post') { S.info = { ...INFO_DEFAULT, ...(post.info || {}), ...(s.info || {}) }; renderInfoFields(); }
   if (s.state) {
     await loadSnapshot(s.state);
     if (S.ratio !== post.ratio) await setRatio(post.ratio, { record: false });
@@ -4101,7 +4160,7 @@ async function addSlide(kind = 'blank', { preset, at } = {}) {
   if (post.slides.length >= MAX_SLIDES) { toast(`Instagramのカルーセルは最大${MAX_SLIDES}枚です`, 'fa-triangle-exclamation', 'text-hot'); return false; }
   captureSlide();
   const src = post.slides[CUR.idx];
-  const s = { id: uid(), state: kind === 'dup' ? src.state : null, thumb: kind === 'dup' ? src.thumb : '' };
+  const s = { id: uid(), state: kind === 'dup' ? src.state : null, thumb: kind === 'dup' ? src.thumb : '', info: { ...S.info } };
   const pos = at ?? CUR.idx + 1;
   post.slides.splice(pos, 0, s);
   await loadSlide(pos, { skipCapture: true });
@@ -5167,7 +5226,7 @@ async function openDoc(kind, id) {
     S.postType = typeById(doc.type) ? doc.type : TYPES[0].id; $('#postType').value = S.postType; renderVariants();
     $('#postDate').value = doc.date || '';
     cap.value = doc.caption || ''; S.lastTemplate = doc.lastTemplate || '';
-    S.capInfo = doc.capInfo || captionInfoNow(); // older posts: from now on
+    S.capSnap = null; // set once the images are loaded (older posts: from now on)
   } else {
     S.info = { ...INFO_DEFAULT, ...store.get('info', {}) };
     $('#presetType').value = typeById(doc.type) ? doc.type : TYPES[0].id;
@@ -5180,6 +5239,7 @@ async function openDoc(kind, id) {
   await fontsReady;
   fitCanvas();
   await loadSlide(0, { skipCapture: true });
+  if (kind === 'post') S.capSnap = doc.capSnap || captionSnapNow();
   if (doc._init) {
     const init = doc._init; delete doc._init;
     if (init.preset || init.base) await applyPreset(init.preset || init.base, { caption: false });
