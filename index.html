@@ -2777,7 +2777,9 @@ function cleanMatte(a, w, h, alpha) {
   const near = dilate(keep, w, h, Math.max(3, Math.round(Math.max(w, h) / 150)));
   let on = 0;
   for (let i = 0; i < w * h; i++) {
-    const v = keep[i] ? a[i] : near[i] && a[i] > 0.12 ? a[i] : 0;
+    // the matte is often only half sure inside a limb (the background would show through it): what is
+    // fairly sure becomes solid, and only the thin edge stays soft
+    const v = keep[i] ? Math.min(1, Math.max(0, (a[i] - 0.15) / 0.35)) : near[i] && a[i] > 0.12 ? Math.min(1, (a[i] - 0.12) / 0.35) : 0;
     alpha[i] = Math.round(v * 255); if (alpha[i] > 127) on++;
   }
   return on > w * h * 0.05;
@@ -3250,11 +3252,11 @@ async function rebuildFromImage(file) {
       const cut = await cutOut(el, untouched, W, H, k); if (!cut) continue;
       cuts.set(el, cut);
       let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
-      for (let y = 0; y < cut.h; y++) for (let x = 0; x < cut.w; x++) if (cut.alpha[y * cut.w + x] > 60) {
+      for (let y = 0; y < cut.h; y++) for (let x = 0; x < cut.w; x++) if (cut.alpha[y * cut.w + x] > 16) { // even a faint edge of it goes, or it is left behind as a ghost
         const gx = cut.x0 + x, gy = cut.y0 + y; mask[gy * W + gx] = 1;
         if (gx < x0) x0 = gx; if (gx > x1) x1 = gx; if (gy < y0) y0 = gy; if (gy > y1) y1 = gy;
       }
-      if (x1 >= 0) dilateAround(mask, W, H, [x0, y0, x1, y1], Math.max(2, Math.round(W / 300)));
+      if (x1 >= 0) dilateAround(mask, W, H, [x0, y0, x1, y1], Math.max(2, Math.round(W / (cut.person ? 180 : 300))));
     }
     els = els.filter(e => e.kind !== 'image' || cuts.has(e));
     const onPerson = new Uint8Array(W * H);
