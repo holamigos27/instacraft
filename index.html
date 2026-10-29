@@ -619,7 +619,8 @@
             <button class="btn !px-2.5" id="btnInsertTpl" title="テンプレートを挿入"><i class="fa-solid fa-file-import"></i>挿入</button>
             <button class="btn !px-2.5" id="btnEditTypes" title="投稿タイプとキャプションテンプレートを編集"><i class="fa-solid fa-pen-to-square"></i></button>
           </div>
-          <label class="ctl-row mt-2 text-[11px]"><input type="checkbox" id="autoTags" checked>テンプレ挿入時に定型文とハッシュタグも自動追加</label>
+          <div class="text-[10px] text-slate-500 mt-1.5 min-h-[14px]" id="capMode"></div>
+          <label class="ctl-row mt-1 text-[11px]"><input type="checkbox" id="autoTags" checked>テンプレ挿入時に定型文とハッシュタグも自動追加</label>
         </div>
 
         <div class="preset-only">
@@ -635,21 +636,6 @@
             <button class="btn hover:!border-hot hover:!text-hot" id="btnPresetDelete"><i class="fa-regular fa-trash-can"></i>削除</button>
           </div>
           <button class="btn btn-accent w-full mt-2 !py-2.5" id="btnPresetUse"><i class="fa-solid fa-plus"></i>このデザインで投稿を作成</button>
-        </div>
-
-        <div class="post-only">
-          <div class="sec-title justify-between"><span class="flex items-center gap-2"><i class="fa-solid fa-flag-checkered"></i>試合情報</span>
-            <a href="#/masters" class="tracking-normal normal-case font-normal text-[10px] text-accent hover:underline">リストを管理</a></div>
-          <div class="card space-y-2">
-            <div><label class="lbl">大会名</label><input class="field select-text" id="miCompetition" autocomplete="off" data-combo="competitions" placeholder="リストから選ぶか入力"></div>
-            <div class="grid grid-cols-2 gap-2">
-              <div><label class="lbl">日付</label><input type="date" class="field" id="miDate"></div>
-              <div><label class="lbl">会場名</label><input class="field select-text" id="miVenue" autocomplete="off" data-combo="venues" placeholder="リストから選ぶか入力"></div>
-            </div>
-            <div><label class="lbl">対戦相手</label><input class="field select-text" id="miOpponent" autocomplete="off" data-combo="opponents" placeholder="リストから選ぶか入力"></div>
-            <div class="flex items-center gap-2 text-[10px] text-slate-500 min-h-[16px]" id="miEmblem"></div>
-            <button class="btn btn-accent w-full" id="btnMatchApply"><i class="fa-solid fa-arrows-rotate"></i>反映（キャプションとデザインに自動入力）</button>
-          </div>
         </div>
 
         <div class="post-only">
@@ -954,6 +940,16 @@
   </div>
 </div>
 
+<!-- ============ FLOATING EDIT WINDOW (opened from the layer list) ============ -->
+<div id="floatProps" class="hidden fixed z-40 w-[310px] bg-panel border border-line rounded-xl shadow-2xl flex-col" style="left:340px;top:110px;max-height:calc(100vh - 130px)">
+  <div class="flex items-center gap-2 pl-3 pr-1.5 h-9 border-b border-line cursor-move select-none flex-shrink-0" id="fpHead" title="ドラッグで移動">
+    <i class="fa-solid fa-sliders text-accent text-[11px]"></i><span class="text-[11px] font-bold text-slate-200 truncate flex-1" id="fpTitle">編集</span>
+    <button class="icon-btn !w-7 !h-7" id="fpDock" title="左の「編集」タブで開く"><i class="fa-solid fa-table-columns text-[11px]"></i></button>
+    <button class="icon-btn !w-7 !h-7" id="fpClose" title="閉じる"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="flex-1 min-h-0 overflow-y-auto p-3" id="fpBody"></div>
+</div>
+
 <!-- ============ CRAFT RESULT MODAL ============ -->
 <div class="modal" id="craftModal">
   <div class="w-[520px] bg-panel border border-line rounded-2xl p-6 space-y-4">
@@ -965,13 +961,15 @@
       <img id="craftModalImg" class="w-40 rounded-lg border border-line bg-black object-contain max-h-52">
       <div class="text-[11px] text-slate-400 leading-relaxed space-y-2">
         <p id="craftModalInfo"></p>
-        <p>「置換」すると、そのスライドの内容がこの画像1枚になります（クイック編集の文字などは画像に統合されます）。</p>
+        <p id="craftModalLayered" class="hidden text-slate-300"><i class="fa-solid fa-layer-group text-accent mr-1"></i><b class="text-white">レイヤーのまま反映</b>すると、レイヤーごとにクイック編集へ戻ります。変更していないテキスト・枠・図形は元のまま（文字の打ち替え・自動入力もそのまま）、変更したレイヤーと新しいレイヤーは<span id="craftModalApp2"></span>での見た目で入ります。</p>
+        <p id="craftModalFlat">「画像1枚で置換」すると、そのスライドの内容がこの画像1枚になります（クイック編集の文字などは画像に統合されます）。</p>
       </div>
     </div>
-    <div class="flex justify-end gap-2">
+    <div class="flex flex-wrap justify-end gap-2">
       <button class="btn" data-close>キャンセル</button>
       <button class="btn" id="craftAsNew"><i class="fa-solid fa-plus"></i>新しいスライドとして追加</button>
-      <button class="btn btn-accent" id="craftReplace"><i class="fa-solid fa-right-left"></i>スライド<span id="craftModalNo">1</span>を置換</button>
+      <button class="btn" id="craftReplace"><i class="fa-solid fa-image"></i>画像1枚で置換</button>
+      <button class="btn btn-accent hidden" id="craftLayers"><i class="fa-solid fa-layer-group"></i>スライド<span id="craftModalNo">1</span>にレイヤーのまま反映</button>
     </div>
   </div>
 </div>
@@ -1308,7 +1306,7 @@ const RATIOS = { '1:1': [1080, 1080], '4:5': [1080, 1350], '9:16': [1080, 1920] 
 const MAX_SLIDES = 10;
 const PROPS = ['name', 'role', 'fx', 'fullBleed', 'filled', 'locked', 'selectable', 'evented', 'hasControls',
   'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'perPixelTargetFind', 'splitByGrapheme',
-  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind', 'scorerBox', 'noWrap', 'fitBase', 'pkLine'];
+  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind', 'scorerBox', 'noWrap', 'fitBase', 'pkLine', 'gradFill', 'cid', 'clipTo'];
 const BADGE_COLORS = ['bg-accent/15 text-accent', 'bg-sky/15 text-sky', 'bg-amber-400/15 text-amber-300', 'bg-violet-400/15 text-violet-300', 'bg-hot/15 text-hot', 'bg-emerald-400/15 text-emerald-300', 'bg-orange-400/15 text-orange-300', 'bg-pink-400/15 text-pink-300'];
 const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇', scorers: "Raise Nakagawa 1'\nEito Watanabe 4'\nTsukasa Nishikawa 12'" };
 /* post-info fields; the user can add their own (key c_…). Labels double as {placeholder} names. */
@@ -1643,9 +1641,11 @@ canvas.on('object:modified', e => {
   const t = e.target;
   if (t && t.type === 'image') t.fullBleed = false;
   fitNoWrap(t); // a no-wrap box made narrower or wider
+  if (t?.gradFill) applyGradFill(t);
+  scheduleClips();
   markDirty(t); saveHistory(); refreshLayersSoon(); syncPropsLive();
 });
-canvas.on('text:changed', e => { fitScorer(e.target); fitNoWrap(e.target); textEdited(e.target); markDirty(e.target); saveHistory(); refreshLayersSoon(); const ta = $('#props [data-k="text"]'); if (ta && document.activeElement !== ta) ta.value = e.target.text; });
+canvas.on('text:changed', e => { fitScorer(e.target); fitNoWrap(e.target); if (e.target.gradFill) applyGradFill(e.target); scheduleClips(); textEdited(e.target); markDirty(e.target); saveHistory(); refreshLayersSoon(); const ta = $('#props [data-k="text"]'); if (ta && document.activeElement !== ta) ta.value = e.target.text; });
 /* a hand-edited text keeps its {placeholders} only if it still has some (filled on 「反映」) */
 /* "no wrap" text: one line per line of text; when it is longer than the box, the letters shrink
    (never above fitBase, the size it was set to) */
@@ -1668,9 +1668,46 @@ function onSel(e) {
     zoomHinted = true;
     toast('画像の四隅が隠れています。左下の − か Ctrl+ホイールで縮小表示すると、つかんでサイズ変更できます', 'fa-magnifying-glass-minus', 'text-sky', 5000);
   }
-  // picking something on the canvas opens its properties in the left panel
-  if (e && e.selected && e.selected.length && !HIST.lock && LAY.left && S.tab === 'quick' && !layerPick) showLeftTab('props');
+  // with the layer list open, the properties come up in their own window beside it;
+  // otherwise picking something on the canvas opens them in the left panel
+  if (e && e.selected && e.selected.length && !HIST.lock && LAY.left && S.tab === 'quick') {
+    if (LEFT_TAB === 'layer') floatProps(true);
+    else if (!layerPick) showLeftTab('props');
+  }
+  if (!o && FP.on) floatProps(false);
 }
+const FP = { on: false, drag: null };
+let LEFT_TAB = 'tpl'; // the left panel tab that is open
+function floatProps(on) {
+  const props = $('#props'), w = $('#floatProps');
+  if (on) {
+    if (!FP.on) $('#fpBody').appendChild(props);
+    FP.on = true; w.classList.remove('hidden'); w.classList.add('flex');
+    const pos = store.get('floatProps', null);
+    if (pos) { w.style.left = Math.min(pos.x, innerWidth - 120) + 'px'; w.style.top = Math.min(Math.max(0, pos.y), innerHeight - 60) + 'px'; }
+    else { const r = $('#leftAside').getBoundingClientRect(); w.style.left = (r.right + 10) + 'px'; w.style.top = (r.top + 50) + 'px'; }
+    $('#fpTitle').textContent = '編集 ' + $('#propTitle').textContent;
+  } else if (FP.on) {
+    $('[data-pane="props"]').appendChild(props);
+    FP.on = false; w.classList.add('hidden'); w.classList.remove('flex');
+  }
+}
+$('#fpClose').addEventListener('click', () => floatProps(false));
+$('#fpDock').addEventListener('click', () => { floatProps(false); showLeftTab('props'); });
+$('#fpHead').addEventListener('pointerdown', e => {
+  if (e.target.closest('button')) return;
+  const r = $('#floatProps').getBoundingClientRect();
+  FP.drag = { dx: e.clientX - r.left, dy: e.clientY - r.top }; e.preventDefault();
+});
+window.addEventListener('pointermove', e => {
+  if (!FP.drag) return;
+  const w = $('#floatProps'), x = Math.max(0, Math.min(innerWidth - 80, e.clientX - FP.drag.dx)), y = Math.max(0, Math.min(innerHeight - 40, e.clientY - FP.drag.dy));
+  w.style.left = x + 'px'; w.style.top = y + 'px';
+});
+window.addEventListener('pointerup', () => {
+  if (!FP.drag) return; FP.drag = null;
+  const r = $('#floatProps').getBoundingClientRect(); store.set('floatProps', { x: Math.round(r.left), y: Math.round(r.top) });
+});
 
 /* ---------------- snapping guides ---------------- */
 /* smart guides (like PowerPoint): while dragging, the object's edges and centre snap to the
@@ -2025,13 +2062,23 @@ function emblemSlot(x, y, r, id, label) {
 const logoSlot = ({ W, H, k }) => emblemSlot(W * 0.915, H * 0.055, 52 * k, 'logo', 'ロゴ');
 
 const slotKey = slot => slot.slotId || 'main';
+/* the frame's own shape, size and angle (not its bounding box), for clipping a photo to it */
+function slotClip(slot) {
+  const c = slot.getCenterPoint(), w = slot.width * slot.scaleX, h = slot.height * slot.scaleY;
+  const o = { originX: 'center', originY: 'center', left: c.x, top: c.y, angle: slot.angle || 0, absolutePositioned: true };
+  if (slot.type === 'circle') return new fabric.Ellipse({ ...o, rx: w / 2, ry: h / 2 });
+  return new fabric.Rect({ ...o, width: w, height: h, rx: (slot.rx || 0) * slot.scaleX, ry: (slot.ry || 0) * slot.scaleY });
+}
+const slotOfKey = key => canvas.getObjects().find(o => o.role === 'slot' && slotKey(o) === key);
 function placeInSlot(img, slot) {
-  const b = slot.getBoundingRect(true, true), pad = slot.slotPad ?? 50;
+  // the frame's own size and angle: a tilted frame gets a tilted photo
+  const c = slot.getCenterPoint(), w = slot.width * slot.scaleX, h = slot.height * slot.scaleY, pad = slot.slotPad ?? 50;
   // a photo frame is filled edge to edge and clipped to it; emblems and logos fit inside
   const photo = slotKindOf(slot) === 'photo';
-  const s = photo ? Math.max(b.width / img.width, b.height / img.height) : Math.min((b.width - pad * 2) / img.width, (b.height - pad * 2) / img.height);
-  img.set({ originX: 'center', originY: 'center', left: b.left + b.width / 2, top: b.top + b.height / 2, angle: 0, scaleX: s, scaleY: s, fullBleed: false, inSlot: slotKey(slot) });
-  img.clipPath = photo ? new fabric.Rect({ left: b.left, top: b.top, width: b.width, height: b.height, absolutePositioned: true }) : null;
+  const s = photo ? Math.max(w / img.width, h / img.height) : Math.min((w - pad * 2) / img.width, (h - pad * 2) / img.height);
+  img.set({ originX: 'center', originY: 'center', left: c.x, top: c.y, angle: slot.angle || 0, scaleX: s, scaleY: s, fullBleed: false, inSlot: slotKey(slot) });
+  img.clipPath = photo ? slotClip(slot) : null;
+  delete img.clipTo;
   img.dirty = true;
   img.setCoords();
   canvas.moveTo(img, canvas.getObjects().indexOf(slot) + 1);
@@ -2063,6 +2110,7 @@ function fillInfo(text, info = S.info, team = teamOf(info)) {
   const byName = { team: team.name, account: team.account, 'チーム名': team.name, 'アカウント': '@' + team.account,
     'PK結果': info.pk ? `(PK ${info.pkUs ?? ''}-${info.pkThem ?? ''})` : '' };
   infoFields.forEach(f => { byName[f.key] = info[f.key] ?? ''; byName[f.label] = info[f.key] ?? ''; });
+  const dp = dateParts(info); byName['年月日'] = dp.ymd; byName['月日'] = dp.md;
   return String(text).replace(/\{([^{}\n]+)\}/g, (m, k) => (k in byName ? byName[k] : m));
 }
 const hasPlaceholder = t => /\{[^{}\n]+\}/.test(t || '');
@@ -2070,7 +2118,7 @@ const hasPlaceholder = t => /\{[^{}\n]+\}/.test(t || '');
 function fillTplTexts() {
   let n = 0;
   canvas.getObjects().forEach(o => {
-    if (o.type === 'textbox' && o.tpl) { o.set('text', fillInfo(o.tpl)); o.initDimensions(); fitNoWrap(o); o.setCoords(); n++; }
+    if (o.type === 'textbox' && o.tpl) { o.set('text', fillInfo(o.tpl)); o.initDimensions(); fitNoWrap(o); if (o.gradFill) applyGradFill(o); o.setCoords(); n++; }
   });
   canvas.requestRenderAll();
   return n;
@@ -2434,6 +2482,7 @@ function copySelection(cut = false) {
 /* a copy is a new object: it does not belong to a slot, and a copied frame gets its own id */
 function freshCopy(x) {
   x.fullBleed = false; delete x.inSlot;
+  if (x.cid) x.cid = uid(); // a copy of a clipping base is a base of its own
   if (x.role === 'slot') { x.slotId = (x.slotKind || 'slot') + '-' + uid().slice(-6); x.filled = false; }
   if (x.type === 'image' && x.fx) applyFx(x);
 }
@@ -2514,15 +2563,25 @@ function objOp(op) {
   if (op === 'backward') { if (canvas.getObjects().indexOf(o) > minIdx) canvas.sendBackwards(o); }
   if (op === 'back') canvas.moveTo(o, minIdx);
   if (op === 'del') { canvas.getActiveObjects().forEach(x => canvas.remove(x)); canvas.discardActiveObject(); }
+  if (op === 'clip') { toggleClip(o); return; }
   if (op === 'lock') toggleLock(o);
   if (op === 'dup') {
+    // the copy goes exactly where the original is, just above it (move it with the arrow keys)
+    const top = Math.max(...canvas.getActiveObjects().map(x => canvas.getObjects().indexOf(x)));
     o.clone(cl => {
       canvas.discardActiveObject();
-      cl.set({ left: cl.left + 30, top: cl.top + 30, evented: true });
-      if (cl.type === 'activeSelection') { cl.canvas = canvas; cl.forEachObject(x => canvas.add(x)); cl.setCoords(); }
-      else { if (cl.type === 'image' && o.fx) applyFx(cl); canvas.add(cl); }
-      cl.fullBleed = false;
-      canvas.setActiveObject(cl); canvas.requestRenderAll(); saveHistory();
+      cl.set({ evented: true });
+      if (cl.type === 'activeSelection') {
+        cl.canvas = canvas;
+        const items = cl.getObjects();
+        items.forEach(x => freshCopy(x));
+        cl._restoreObjectsState();
+        items.forEach((x, n) => { canvas.insertAt(x, top + 1 + n); x.setCoords(); });
+        const sel = new fabric.ActiveSelection(items, { canvas });
+        canvas.setActiveObject(sel);
+      } else { freshCopy(cl); canvas.insertAt(cl, top + 1); cl.setCoords(); canvas.setActiveObject(cl); }
+      canvas.requestRenderAll(); saveHistory(); refreshLayersSoon();
+      toast('同じ位置に複製しました（矢印キーで移動）', 'fa-clone');
     }, PROPS);
     return;
   }
@@ -2535,6 +2594,47 @@ function toggleLock(o) {
   toast(l ? 'ロックしました' : 'ロックを解除しました', l ? 'fa-lock' : 'fa-lock-open');
 }
 $('#objTools').addEventListener('click', e => { const b = e.target.closest('[data-op]'); if (b) objOp(b.dataset.op); });
+
+/* ---------------- clipping masks ----------------
+   Alt+click a layer: it shows only inside the layer below it (its base), like Photoshop. The base is
+   found by its cid; the mask is a copy of the base, rebuilt whenever the base moves or changes. */
+const clipBaseOf = o => o.clipTo ? canvas.getObjects().find(x => x.cid === o.clipTo && x !== o) : null;
+function refreshClip(o) {
+  const base = clipBaseOf(o);
+  if (!base) { if (o.clipTo) releaseClip(o); return; }
+  base.clone(cl => {
+    const d = fabric.util.qrDecompose(base.calcTransformMatrix()); // where it is, also inside a selection
+    cl.set({ originX: 'center', originY: 'center', left: d.translateX, top: d.translateY, angle: d.angle, scaleX: d.scaleX, scaleY: d.scaleY, skewX: d.skewX, skewY: 0, flipX: false, flipY: false,
+      absolutePositioned: true, opacity: 1, visible: true, shadow: null, clipPath: null });
+    if (cl.type === 'textbox') cl.set({ backgroundColor: '', textBackgroundColor: '' });
+    o.clipPath = cl; o.dirty = true; canvas.requestRenderAll();
+  }, PROPS);
+}
+function releaseClip(o) {
+  delete o.clipTo;
+  const slot = o.inSlot && slotOfKey(o.inSlot);
+  o.clipPath = slot && slotKindOf(slot) === 'photo' ? slotClip(slot) : null; // a photo goes back to its frame
+  o.dirty = true;
+}
+let clipT = 0;
+function scheduleClips() {
+  clearTimeout(clipT);
+  clipT = setTimeout(() => canvas.getObjects().forEach(o => { if (o.clipTo) refreshClip(o); }), 16);
+}
+['object:moving', 'object:scaling', 'object:rotating', 'object:skewing', 'object:removed'].forEach(ev => canvas.on(ev, scheduleClips));
+function toggleClip(o) {
+  if (o.clipTo) { releaseClip(o); toast('クリッピングマスクを解除しました', 'fa-scissors'); }
+  else {
+    const objs = canvas.getObjects();
+    let base = objs[objs.indexOf(o) - 1];
+    while (base && base.clipTo && clipBaseOf(base)) base = clipBaseOf(base); // clipped layers share their base
+    if (!base || base.role === 'bg') return toast('下にレイヤーがないため、クリッピングマスクを作れません', 'fa-circle-info', 'text-sky');
+    if (!base.cid) base.cid = uid();
+    o.clipTo = base.cid; refreshClip(o);
+    toast(`「${layerName(base)}」の形で切り抜きました（もう一度 Alt+クリックで解除）`, 'fa-scissors');
+  }
+  canvas.requestRenderAll(); markDirty(o); saveHistory(); refreshLayers();
+}
 
 /* ---------------- layers ---------------- */
 let layerRAF;
@@ -2550,9 +2650,11 @@ function refreshLayers() {
   for (let i = objs.length - 1; i >= 0; i--) {
     const o = objs[i];
     if (o.role === 'bg') continue;
-    rows.push(`<div class="layer-row cursor-grab ${act.includes(o) ? 'active' : ''} ${o.visible === false ? 'opacity-40' : ''}" data-li="${i}" title="ドラッグで重なり順を変更">
+    const clipped = !!clipBaseOf(o), isBase = !!o.cid && objs.some(x => x.clipTo === o.cid && x !== o);
+    rows.push(`<div class="layer-row cursor-grab ${act.includes(o) ? 'active' : ''} ${o.visible === false ? 'opacity-40' : ''} ${clipped ? '!pl-5' : ''}" data-li="${i}" title="ドラッグで重なり順を変更・Alt+クリックでクリッピングマスク">
+      ${clipped ? '<i class="fa-solid fa-turn-down fa-flip-horizontal text-accent text-[10px] -ml-2" title="下のレイヤーでクリッピング中"></i>' : ''}
       <i class="fa-solid ${layerIcon(o)} w-4 text-center text-slate-500 text-[11px]"></i>
-      <span class="flex-1 truncate">${esc(layerName(o))}</span>
+      <span class="flex-1 truncate ${isBase ? 'underline decoration-accent/70 underline-offset-2' : ''}">${esc(layerName(o))}</span>
       <button data-la="vis" title="表示切替"><i class="fa-regular ${o.visible === false ? 'fa-eye-slash' : 'fa-eye'} text-[11px]"></i></button>
       <button data-la="lock" title="ロック"><i class="fa-solid ${o.locked ? 'fa-lock text-accent' : 'fa-lock-open'} text-[10px]"></i></button>
     </div>`);
@@ -2567,6 +2669,7 @@ $('#layerList').addEventListener('click', e => {
   if (la === 'vis') { o.visible = o.visible === false; if (!o.visible) canvas.discardActiveObject(); canvas.requestRenderAll(); saveHistory(); refreshLayers(); return; }
   if (la === 'lock') { toggleLock(o); return; }
   if (layerDrag.moved) return; // the click that ends a drag
+  if (e.altKey) { toggleClip(o); return; }
   pickFromLayers(o);
 });
 /* picking in the layer list keeps the list open (the canvas opens the edit tab) */
@@ -2682,6 +2785,7 @@ function renderProps() {
   else if (o.type === 'group') h = groupPropsHTML(o);
   else h = shapePropsHTML(o);
   el.innerHTML = sizeSecHTML(o) + h;
+  if (FP.on) $('#fpTitle').textContent = '編集 ' + $('#propTitle').textContent;
 }
 function syncPropsLive() { syncObjBar(); }
 canvas.on('object:scaling', syncSizeInputs);
@@ -2783,7 +2887,7 @@ function textPropsHTML(o) {
       C.range('lineHeight', '行間', 0.6, 2.5, 0.05, r2(o.lineHeight)) +
       `<div class="ctl"><span class="ctl-l">揃え</span>${C.seg([['align:left', '<i class="fa-solid fa-align-left"></i>', o.textAlign === 'left'], ['align:center', '<i class="fa-solid fa-align-center"></i>', o.textAlign === 'center'], ['align:right', '<i class="fa-solid fa-align-right"></i>', o.textAlign === 'right']])}</div>`) +
     C.sec('fa-palette', '色・縁取り',
-      C.color('fill', '文字色', o.fill) + C.color('stroke', '縁取り色', o.stroke || '#000000') +
+      fillModeHTML(o, '文字色') + C.color('stroke', '縁取り色', o.stroke || '#000000') +
       C.range('strokeWidth', '縁取りの太さ', 0, 30, 1, o.stroke ? o.strokeWidth : 0, 'px')) +
     C.sec('fa-cloud', 'シャドウ',
       C.toggle('shadowOn', 'シャドウを付ける', !!shd) + C.color('shadowColor', '影の色', shd ? shd.color : '#000000') +
@@ -2823,11 +2927,27 @@ function slotPropsHTML(o) {
     (CUR.kind === 'preset' ? `<div class="mt-2">${C.select('slotKind', '入れる画像の種類', SLOT_KINDS, slotKindOf(o))}</div>` +
       `<p class="text-[10px] text-slate-500 leading-relaxed">枠は四隅をドラッグして大きさを変えられます。投稿でこのデザインを使うと、アップロードした画像や登録済みのエンブレム・ロゴがこの枠に収まります。</p>` : ''));
 }
+/* a two-colour gradient fill at an angle, kept in gradFill so it can be edited and follows the size */
+function applyGradFill(o) {
+  const g = o.gradFill; if (!g) return;
+  const w = o.width, h = o.height, a = (g.angle || 0) * Math.PI / 180;
+  const len = Math.abs(w * Math.cos(a)) / 2 + Math.abs(h * Math.sin(a)) / 2, dx = Math.cos(a) * len, dy = Math.sin(a) * len;
+  o.set('fill', new fabric.Gradient({ type: 'linear', gradientUnits: 'pixels', coords: { x1: w / 2 - dx, y1: h / 2 - dy, x2: w / 2 + dx, y2: h / 2 + dy },
+    colorStops: [{ offset: 0, color: g.c1 }, { offset: 1, color: g.c2 }] }));
+  o.dirty = true;
+}
+function fillModeHTML(o, label) {
+  const g = o.gradFill;
+  return `<div class="ctl"><span class="ctl-l">塗りの種類</span>${C.seg([['fillmode:solid', '単色', !g], ['fillmode:grad', 'グラデーション', !!g]])}</div>` +
+    (g ? `<div class="grid grid-cols-2 gap-2">${C.color('grad1', '色1', g.c1, false)}${C.color('grad2', '色2', g.c2, false)}</div>` +
+         C.range('gradAngle', '角度', 0, 360, 1, g.angle || 0, '°') +
+         `<div class="flex flex-wrap gap-1">${[[S.team.accent, '#ffffff'], ['#ffffff', S.team.primary], [S.team.primary, S.team.secondary], ['#ffd54a', '#ff7a00'], ['#f5f7fa', '#8a93a6']].map(([a, b]) => `<button class="sw !w-9" style="background:linear-gradient(90deg,${a},${b})" data-act="gradPreset:${a}|${b}" title="このグラデーション"></button>`).join('')}</div>`
+       : C.color('fill', label, typeof o.fill === 'string' ? o.fill : '#ffffff'));
+}
 function shapePropsHTML(o) {
   const noFill = !o.fill || (typeof o.fill === 'string' && /rgba\(.*,\s*0\)$/.test(o.fill.replace(/\s/g, '')));
-  const isGrad = o.fill && typeof o.fill === 'object';
   return C.sec('fa-fill', '塗り',
-      C.color('fill', isGrad ? '塗り（グラデ→単色に変更）' : '塗りの色', o.fill) + C.toggle('fillNone', '塗りなし（透明）', noFill) +
+      fillModeHTML(o, '塗りの色') + (o.gradFill ? '' : C.toggle('fillNone', '塗りなし（透明）', noFill)) +
       (o.type === 'rect' ? C.range('rx', '角丸', 0, 200, 1, Math.round(o.rx || 0), 'px') : '')) +
     C.sec('fa-pen', '線（ストローク）',
       C.color('stroke', '線の色', o.stroke || '#ffffff') + C.range('strokeWidth', '線の太さ', 0, 60, 1, o.stroke ? o.strokeWidth : 0, 'px') +
@@ -2876,7 +2996,10 @@ function setProp(k, v) {
     case 'noWrap': o.noWrap = !!v; if (v) { o.fitBase = o.fontSize; fitNoWrap(o); } else if (o.fitBase) { o.set('fontSize', o.fitBase); o.initDimensions(); } renderProps(); break;
     case 'charSpacing': o.set('charSpacing', +v); break;
     case 'lineHeight': o.set('lineHeight', +v); break;
-    case 'fill': o.set('fill', v); break;
+    case 'fill': delete o.gradFill; o.set('fill', v); break;
+    case 'grad1': o.gradFill = { ...o.gradFill, c1: v }; break;
+    case 'grad2': o.gradFill = { ...o.gradFill, c2: v }; break;
+    case 'gradAngle': o.gradFill = { ...o.gradFill, angle: +v }; break;
     case 'fillNone': o.set({ fill: v ? 'rgba(0,0,0,0)' : S.team.accent, perPixelTargetFind: !!v }); if (v && !o.strokeWidth) o.set({ stroke: '#ffffff', strokeWidth: 8 }); renderProps(); break;
     case 'stroke': o.set('stroke', v); if (!o.strokeWidth) { o.set('strokeWidth', o.type === 'textbox' ? 3 : 6); renderProps(); } if (o.type === 'textbox') o.set('paintFirst', 'stroke'); break;
     case 'strokeWidth': o.set({ strokeWidth: +v, stroke: o.stroke || '#000000' }); if (o.type === 'textbox') o.set('paintFirst', 'stroke'); else o.set('strokeUniform', true); break;
@@ -2902,8 +3025,9 @@ function setProp(k, v) {
         if (key === 'recolor' && !had) renderProps(); // shows the reset button once
       }
   }
+  if (o.gradFill) applyGradFill(o); // follows the text's new size too
   o.setCoords && o.setCoords();
-  canvas.requestRenderAll();
+  canvas.requestRenderAll(); scheduleClips();
   markDirty(o); saveHistory();
 }
 function setSlotKind(o, v) { o.slotKind = v; S.dirty = true; saveHistory(); }
@@ -2914,6 +3038,12 @@ function propAction(act) {
   if (a === 'toCraft') { setCenterTab('photocraft', { send: true }); return; }
   if (!o) return;
   switch (a) {
+    case 'fillmode': {
+      if (v === 'grad' && !o.gradFill) { const c = typeof o.fill === 'string' && !/rgba\(.*,\s*0\)$/.test(o.fill.replace(/\s/g, '')) ? toHex(o.fill) : S.team.accent; o.gradFill = { c1: c, c2: c.toLowerCase() === '#ffffff' ? S.team.primary : '#ffffff', angle: 90 }; applyGradFill(o); }
+      if (v === 'solid' && o.gradFill) { const c = o.gradFill.c1; delete o.gradFill; o.set('fill', c); }
+      renderProps(); break;
+    }
+    case 'gradPreset': { const [c1, c2] = act.slice(11).split('|'); o.gradFill = { angle: 90, ...o.gradFill, c1, c2 }; applyGradFill(o); renderProps(); break; }
     case 'italic': o.set('fontStyle', o.fontStyle === 'italic' ? 'normal' : 'italic'); break;
     case 'under': o.set('underline', !o.underline); break;
     case 'align': o.set('textAlign', v); break;
@@ -2950,6 +3080,7 @@ function propAction(act) {
   }
   o.setCoords && o.setCoords();
   canvas.requestRenderAll(); markDirty(o); saveHistory();
+  if (o.gradFill && ['italic', 'under'].includes(a)) applyGradFill(o);
   if (['italic', 'under', 'align', 'bg', 'group', 'ungroup'].includes(a)) renderProps();
   refreshLayersSoon();
 }
@@ -3058,6 +3189,8 @@ function initFolds() {
 
 /* ---------------- left panel bindings ---------------- */
 function showLeftTab(name) {
+  LEFT_TAB = name;
+  if (name !== 'layer') floatProps(false); // the edit window goes with the layer list
   $$('#leftTabs .ltab').forEach(x => x.classList.toggle('active', x.dataset.tab === name));
   $$('[data-pane]').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== name));
   if (name === 'layer') refreshLayers();
@@ -3208,7 +3341,22 @@ function withPkResult(tpl, info = S.info) {
   lines[n] = lines[n].replace(/\s*$/, ' {PK結果}');
   return lines.join('\n');
 }
-const currentTemplateText = () => curType()?.templates?.[+$('#capVariant').value || 0]?.text || '';
+const currentTemplate = () => curType()?.templates?.[+$('#capVariant').value || 0];
+/* the post's matches (images with different match info); with more than one the template's
+   複数試合用 text is used, if it has one */
+const matchCount = (slides, tpl = currentTemplate()?.text || '') => captionParts(tpl, slides).filter(x => x.key.startsWith('b:')).length;
+function templateFor(slides) {
+  const t = currentTemplate(); if (!t) return '';
+  return t.multi?.trim() && matchCount(slides, t.text || '') > 1 ? t.multi : (t.text || '');
+}
+function showCapMode() {
+  const t = currentTemplate(), el = $('#capMode'); if (!el) return;
+  if (!t || CUR.kind !== 'post') { el.textContent = ''; return; }
+  const n = matchCount(captionSlides(), t.text || '');
+  el.innerHTML = n > 1
+    ? (t.multi?.trim() ? `<i class="fa-solid fa-layer-group text-accent"></i> ${n}試合 → 複数試合用の文章を使用中` : `<i class="fa-solid fa-layer-group"></i> ${n}試合（複数試合用が未作成のため1試合用を試合数だけ繰り返し）`)
+    : `<i class="fa-regular fa-file-lines"></i> 1試合用の文章を使用中${t.multi?.trim() ? '（画像ごとに試合が違うと複数試合用に切替）' : ''}`;
+}
 /* the images of the post, each with its info (the open one live) */
 function captionSlides() {
   if (!CUR.post || CUR.kind !== 'post') return [{ id: 'one', info: { ...S.info } }];
@@ -3231,17 +3379,20 @@ function captionParts(tpl, slides) {
     blocks.push({ key: 'b:' + sl.id, text });
     const o = String(sl.info.opponent || '').trim(); if (o && !opps.includes(o)) opps.push(o);
   });
-  const parts = [];
+  const parts = [], seen = {};
   paras.forEach((x, i) => {
     if (i === bi && blocks.length) { parts.push(...blocks); return; }
     const t = blocks.length > 1 ? x.replace(/\{対戦相手\}([^、。,，\n{]*)/g, (m, suf) => opps.map(o => o + suf).join('、')) : x;
-    parts.push({ key: 'g' + i, text: fill(t, first) });
+    // keyed by the template's own words, so the 1試合用 and 複数試合用 texts share their common paragraphs
+    seen[x] = (seen[x] || 0) + 1;
+    parts.push({ key: 'g:' + x + '#' + seen[x], text: fill(t, first) });
   });
   return parts;
 }
 const captionFromTemplate = (tpl, slides) => captionParts(tpl, slides).map(x => x.text).join('\n\n');
 function captionTemplate() {
-  let txt = captionFromTemplate(currentTemplateText(), captionSlides());
+  const slides = captionSlides();
+  let txt = captionFromTemplate(templateFor(slides), slides);
   if ($('#autoTags').checked) {
     BLOCKS.filter(b => b.text.trim()).forEach(b => { txt += (txt ? '\n\n' : '') + b.text.trim(); });
     const common = tagGroups.find(g => g.id === 'common');
@@ -3256,7 +3407,7 @@ function insertTemplate(ask = true) {
   const txt = captionTemplate();
   cap.value = txt; S.lastTemplate = txt;
   noteCaptionInfo();
-  onCaptionChange();
+  onCaptionChange(); showCapMode();
 }
 /* the infos the caption was written with; later edits of the info are carried into the caption */
 const captionSnapNow = () => ({ slides: captionSlides().map(x => ({ id: x.id, info: { ...x.info, teamName: teamOf(x.info).name } })) });
@@ -3269,8 +3420,8 @@ function syncCaptionInfo() {
   if (CUR.kind !== 'post') return;
   if (!S.capSnap) { noteCaptionInfo(); return; }
   if (S.lastTemplate && cap.value.trim() === S.lastTemplate.trim()) { insertTemplate(false); return; } // untouched: write it again
-  const was = S.capSnap, now = captionSnapNow(), tpl = currentTemplateText();
-  const oldParts = captionParts(tpl, was.slides), newParts = captionParts(tpl, now.slides);
+  const was = S.capSnap, now = captionSnapNow();
+  const oldParts = captionParts(templateFor(was.slides), was.slides), newParts = captionParts(templateFor(now.slides), now.slides);
   let v = cap.value;
   if (v.trim()) {
     const replaceLines = (o, n) => {
@@ -3284,16 +3435,19 @@ function syncCaptionInfo() {
       if (!op || op.text === np.text) return;
       if (v.includes(op.text)) v = v.replace(op.text, np.text); else replaceLines(op.text, np.text);
     });
-    // a match that no longer has its own paragraph: drop it if untouched
-    oldParts.forEach(op => { if (!newParts.some(x => x.key === op.key) && op.key.startsWith('b:') && v.includes(op.text)) v = v.replace(op.text + '\n\n', '').replace('\n\n' + op.text, '').replace(op.text, ''); });
+    // a part that is gone (a match, or a paragraph only the other template has): drop it if untouched
+    oldParts.forEach(op => { if (!newParts.some(x => x.key === op.key) && op.text.trim() && v.includes(op.text)) v = v.replace(op.text + '\n\n', '').replace('\n\n' + op.text, '').replace(op.text, ''); });
     // a new match: after the paragraph before it
     newParts.forEach((np, i) => {
       if (oldParts.some(x => x.key === np.key) || v.includes(np.text)) return;
       const prev = newParts.slice(0, i).reverse().find(x => v.includes(x.text));
+      const next = newParts.slice(i + 1).find(x => v.includes(x.text));
       if (prev) { const at = v.indexOf(prev.text) + prev.text.length; v = v.slice(0, at) + '\n\n' + np.text + v.slice(at); }
+      else if (next) { const at = v.indexOf(next.text); v = v.slice(0, at) + np.text + '\n\n' + v.slice(at); }
+      else v = np.text + '\n\n' + v;
     });
     // names, dates, places: only values no image uses any more
-    const used = k => new Set(now.slides.map(x => String(x.info[k] ?? '').trim()));
+    const used = k => new Set(now.slides.map(x => String(k === '_md' ? dateParts(x.info).md : x.info[k] ?? '').trim()));
     const swap = (k, a, b) => {
       a = String(a ?? '').trim(); b = String(b ?? '').trim();
       if (a.length < 3 || a === b || /^\d+$/.test(a) || used(k).has(a)) return;
@@ -3302,10 +3456,12 @@ function syncCaptionInfo() {
     now.slides.forEach(ns => {
       const os = was.slides.find(x => x.id === ns.id); if (!os) return;
       ['competition', 'opponent', 'venue', 'date', 'time', 'sponsor', 'teamName'].forEach(k => swap(k, os.info[k], ns.info[k]));
+      swap('_md', dateParts(os.info).md, dateParts(ns.info).md);
     });
   }
   S.capSnap = now; if (CUR.post) CUR.post.capSnap = now;
   if (v !== cap.value) { cap.value = v; onCaptionChange(); }
+  showCapMode();
 }
 function onCaptionChange(from) {
   const v = cap.value;
@@ -3323,14 +3479,14 @@ $('#capVariant').addEventListener('change', () => insertTemplate(true));
 $('#btnInsertTpl').addEventListener('click', () => insertTemplate(true));
 
 /* ---------------- post types & caption templates editor ---------------- */
-const TM = { t: 0, p: 0 };
+const TM = { t: 0, p: 0, f: 'text' };
 function openTypesModal(typeId) {
   TM.t = Math.max(0, TYPES.findIndex(t => t.id === (typeId || S.postType)));
   TM.p = Math.max(0, +$('#capVariant').value || 0);
   renderTypesModal(); openModal('typesModal');
 }
 function placeholderList() {
-  return [{ label: 'チーム名' }, { label: 'アカウント' }, ...infoFields.filter(f => f.key !== 'pk').map(f => ({ label: f.label })), { label: 'PK結果' }];
+  return [{ label: 'チーム名' }, { label: 'アカウント' }, ...infoFields.filter(f => f.key !== 'pk').flatMap(f => f.key === 'date' ? [{ label: '年月日' }, { label: '月日' }] : [{ label: f.label }]), { label: 'PK結果' }];
 }
 function renderTypesModal() {
   const t = TYPES[TM.t];
@@ -3343,7 +3499,7 @@ function renderTypesModal() {
   t.templates = t.templates || [];
   TM.p = Math.min(TM.p, Math.max(0, t.templates.length - 1));
   $('#tmTpls').innerHTML = t.templates.map((x, i) => `
-    <button class="layer-row w-full ${i === TM.p ? 'active' : ''}" data-tmp="${i}"><i class="fa-regular fa-file-lines text-slate-500 text-[11px]"></i><span class="flex-1 truncate text-left">${esc(x.name || '（無題）')}</span></button>`).join('')
+    <button class="layer-row w-full ${i === TM.p ? 'active' : ''}" data-tmp="${i}"><i class="fa-regular fa-file-lines text-slate-500 text-[11px]"></i><span class="flex-1 truncate text-left">${esc(x.name || '（無題）')}</span>${x.multi?.trim() ? '<i class="fa-solid fa-layer-group text-[10px] text-accent" title="複数試合用あり"></i>' : ''}</button>`).join('')
     || '<p class="text-[11px] text-slate-500 p-2">テンプレートがありません</p>';
   const tpl = t.templates[TM.p];
   $('#tmEditor').innerHTML = `
@@ -3358,13 +3514,32 @@ function renderTypesModal() {
       <div><label class="lbl">テンプレート名</label><input class="field select-text" data-tmp-f="name" value="${esc(tpl.name || '')}"></div>
       <button class="btn hover:!border-hot hover:!text-hot" id="tmDelTpl"><i class="fa-regular fa-trash-can"></i>削除</button>
     </div>
-    <textarea class="field flex-1 min-h-[200px] !text-[12px] leading-relaxed resize-none select-text" data-tmp-f="text" id="tmText">${esc(tpl.text || '')}</textarea>
+    <div class="flex items-center gap-1">
+      <div class="flex bg-ink border border-line rounded-lg p-0.5">
+        <button class="ratio-btn !py-1 ${TM.f === 'text' ? 'active' : ''}" data-tmf-tab="text"><i class="fa-regular fa-file-lines"></i>1試合用</button>
+        <button class="ratio-btn !py-1 ${TM.f === 'multi' ? 'active' : ''}" data-tmf-tab="multi"><i class="fa-solid fa-layer-group"></i>複数試合用${tpl.multi?.trim() ? '' : '<span class="text-slate-500">（未作成）</span>'}</button>
+      </div>
+      ${TM.f === 'multi' ? '<button class="mini-btn ml-auto" id="tmCopySingle"><i class="fa-regular fa-copy"></i>1試合用をコピーして作る</button>' : ''}
+    </div>
+    <p class="text-[10px] text-slate-500 leading-relaxed">${TM.f === 'multi'
+      ? '投稿の画像ごとに試合（対戦相手・スコア）が違うときに使われます。スコアの入った段落が試合の数だけ並び、「{対戦相手}の皆様」は「Aの皆様、Bの皆様」になります。空欄なら1試合用の文章を使います。'
+      : '画像が1試合だけのとき（または複数試合用が空欄のとき）に使われます。'}</p>
+    <textarea class="field flex-1 min-h-[200px] !text-[12px] leading-relaxed resize-none select-text" data-tmp-f="${TM.f}" id="tmText">${esc(tpl[TM.f] || '')}</textarea>
     <div class="text-[10px] text-slate-500">差し込み項目（クリックで挿入）：投稿情報の値に置き換わります</div>
     <div class="flex flex-wrap gap-1">${placeholderList().map(p => `<span class="chip" data-tmph="${esc(p.label)}">{${esc(p.label)}}</span>`).join('')}</div>` : '<p class="text-[11px] text-slate-500">「テンプレートを追加」で文章を作成できます。</p>'}`;
 }
 function typesChanged() { saveTypes(); renderTypeSelects(); renderVariants(); renderPresetCards(); }
 $('#tmTypes').addEventListener('click', e => { const b = e.target.closest('[data-tmt]'); if (b) { TM.t = +b.dataset.tmt; TM.p = 0; renderTypesModal(); } });
 $('#tmTpls').addEventListener('click', e => { const b = e.target.closest('[data-tmp]'); if (b) { TM.p = +b.dataset.tmp; renderTypesModal(); } });
+$('#tmEditor').addEventListener('click', e => {
+  const tb = e.target.closest('[data-tmf-tab]');
+  if (tb) { TM.f = tb.dataset.tmfTab; renderTypesModal(); return; }
+  if (e.target.closest('#tmCopySingle')) {
+    const tpl = TYPES[TM.t]?.templates?.[TM.p]; if (!tpl) return;
+    if (tpl.multi?.trim() && !confirm('複数試合用の文章を1試合用の内容で置き換えますか？')) return;
+    tpl.multi = tpl.text || ''; typesChanged(); renderTypesModal();
+  }
+});
 $('#tmEditor').addEventListener('input', e => {
   const t = TYPES[TM.t]; if (!t) return;
   const f = e.target.dataset.tmf, pf = e.target.dataset.tmpF;
@@ -3546,17 +3721,27 @@ $('#blockList').addEventListener('click', e => {
 /* ---------------- match info (right panel) ---------------- */
 const infoDateToISO = v => { const m = String(v || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : ''; };
 const isoToInfoDate = v => { const [y, m, d] = String(v || '').split('-'); return y && m && d ? `${y}.${+m}.${+d}` : ''; };
-const MI = { miCompetition: 'competition', miVenue: 'venue', miOpponent: 'opponent' };
 const opponentByName = name => MASTERS.opponents.find(o => o.name.trim() === String(name || '').trim());
+/* the date as written ("2026.10.25") gives {年月日}; without the year it gives {月日} ("10.25") */
+function dateParts(info = S.info) {
+  const d = String(info.date ?? '').trim();
+  const m = d.match(/^(\d{4})(\D+)(\d{1,2}\D+\d{1,2})(.*)$/);
+  if (m) return { ymd: d, md: m[3] + m[4] };
+  const y = ($('#postDate')?.value || '').slice(0, 4) || String(new Date().getFullYear());
+  return /^\d{1,2}\D+\d{1,2}/.test(d) ? { ymd: y + '.' + d, md: d } : { ymd: d, md: d };
+}
 function fillMatchInfo() {
-  for (const [id, k] of Object.entries(MI)) if (document.activeElement !== $('#' + id)) $('#' + id).value = S.info[k] ?? '';
-  if (document.activeElement !== $('#miDate')) $('#miDate').value = infoDateToISO(S.info.date);
+  const dp = dateParts(), h = $('#infoFields [data-date-parts]');
+  if (h) h.innerHTML = S.info.date ? `<span class="text-slate-600">{年月日}</span> ${esc(dp.ymd)}　<span class="text-slate-600">{月日}</span> ${esc(dp.md)}` : '';
+  const dpk = $('#infoFields [data-date-pick]'); if (dpk) dpk.value = infoDateToISO(dateParts().ymd);
   showOpponentEmblem();
+  showCapMode();
 }
 function showOpponentEmblem() {
+  const el = $('#infoFields [data-opp-emblem]'); if (!el) return;
   const o = opponentByName(S.info.opponent), a = o && assetById(o.assetId);
-  $('#miEmblem').innerHTML = a ? `<img src="${esc(a.url)}" class="w-5 h-5 object-contain">エンブレム「${esc(a.name)}」も相手エンブレムの枠に入ります`
-    : o ? '<i class="fa-regular fa-circle"></i>この対戦相手にはエンブレムが未登録です' : '';
+  el.innerHTML = a ? `<img src="${esc(a.url)}" class="w-5 h-5 object-contain"><span class="flex-1 truncate">エンブレム「${esc(a.name)}」</span><button class="mini-btn !py-0.5" data-opp-place><i class="fa-solid fa-shield-halved"></i>相手エンブレムの枠へ</button>`
+    : o ? '<i class="fa-regular fa-circle"></i>この対戦相手にはエンブレムが未登録です（<a href="#/masters" class="text-accent hover:underline">リストを管理</a>）' : '';
 }
 /* every image of a post has its own info (match, opponent, score, own team…); the post-level info
    is the first image's, for lists and older code */
@@ -3577,8 +3762,6 @@ function setInfo(k, v) {
   const el = $(`#infoFields [data-info="${k}"]`); if (el && document.activeElement !== el) el.value = v;
   updatePreviewMeta(); scheduleInfoTexts();
 }
-for (const [id, k] of Object.entries(MI)) $('#' + id).addEventListener('input', e => { setInfo(k, e.target.value); if (k === 'opponent') showOpponentEmblem(); });
-$('#miDate').addEventListener('change', e => setInfo('date', isoToInfoDate(e.target.value)));
 /* the opponent's registered emblem goes into the opponent emblem frame */
 async function placeOpponentEmblem() {
   const o = opponentByName(S.info.opponent), a = o && assetById(o.assetId);
@@ -3589,11 +3772,6 @@ async function placeOpponentEmblem() {
   await fillSlot(slot, a.url, a.name);
   return true;
 }
-$('#btnMatchApply').addEventListener('click', async () => {
-  await reapplyInfo({ quiet: true });
-  const emb = await placeOpponentEmblem();
-  toast(emb ? 'キャプション・デザイン・相手エンブレムに反映しました' : 'キャプションとデザインに反映しました', 'fa-arrows-rotate');
-});
 function renderDatalists() {
   const opts = list => list.map(x => `<option value="${esc(x.name)}"></option>`).join('');
   $('#dlCompetitions').innerHTML = opts(MASTERS.competitions);
@@ -3632,6 +3810,7 @@ function comboClose() { comboList.classList.add('hidden'); COMBO.input = null; }
 function comboPick(i) {
   const input = COMBO.input, v = COMBO.items[i]; if (!input || v == null) return;
   input.value = v; input.dispatchEvent(new Event('input', { bubbles: true })); comboClose();
+  if (input.dataset.info === 'opponent') placeOpponentEmblem();
 }
 function comboHighlight(i) {
   COMBO.hi = Math.max(0, Math.min(COMBO.items.length - 1, i));
@@ -3754,7 +3933,13 @@ function renderInfoFields() {
       ${f.key === 'scorers'
         ? `<textarea class="field select-text resize-y leading-relaxed" rows="6" data-info="scorers" placeholder="1行に1人ずつ（例：Raise Nakagawa 1'）&#10;カンマ区切りでもOK">${esc(scorerLines(S.info.scorers))}</textarea>
            <div class="text-[10px] text-slate-500 mt-1">1行に1人。入力するとデザインにすぐ反映されます（<span data-scorer-count>${splitScorers(S.info.scorers).length}</span>人）</div>`
+        : f.key === 'date'
+        ? `<div class="relative"><input class="field select-text pr-8" data-info="date" value="${esc(S.info.date ?? '')}" placeholder="2026.10.25">
+             <label class="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 grid place-items-center text-slate-400 hover:text-accent cursor-pointer" title="カレンダーから選ぶ"><i class="fa-regular fa-calendar"></i>
+               <input type="date" data-date-pick class="absolute inset-0 opacity-0 cursor-pointer" tabindex="-1"></label></div>
+           <div class="text-[10px] text-slate-400 mt-1 truncate" data-date-parts></div>`
         : `<input class="field select-text" data-info="${f.key}" ${{ competition: 'data-combo="competitions" autocomplete="off"', venue: 'data-combo="venues" autocomplete="off"', opponent: 'data-combo="opponents" autocomplete="off"' }[f.key] || ''} value="${esc(S.info[f.key] ?? '')}">`}
+      ${f.key === 'opponent' ? '<div class="flex items-center gap-1.5 text-[10px] text-slate-500 mt-1 min-h-[14px]" data-opp-emblem></div>' : ''}
     </div>` + (f.key === 'scoreThem' ? pkField : '')).join('');
   fillMatchInfo();
   $('#placeholderChips').innerHTML = placeholderList().map(p => `<span class="chip" data-ph="${esc(p.label)}" title="選択中のテキストに挿入">{${esc(p.label)}}</span>`).join('');
@@ -3771,6 +3956,13 @@ function applyPkVisibility() {
   canvas.requestRenderAll();
 }
 $('#infoFields').addEventListener('change', e => {
+  if (e.target.matches('[data-date-pick]')) {
+    const v = isoToInfoDate(e.target.value); if (!v) return;
+    const [y, m, d] = v.split('.'), f = $('#infoFields [data-info="date"]');
+    const out = `${y}.${m.padStart(2, '0')}.${d.padStart(2, '0')}`;
+    f.value = out; f.dispatchEvent(new Event('input', { bubbles: true }));
+    return;
+  }
   if (!e.target.matches('[data-pk]')) return;
   S.info.pk = e.target.checked ? '1' : ''; store.set('info', S.info);
   commitInfo();
@@ -3798,7 +3990,11 @@ $('#infoFields').addEventListener('input', e => {
   if (k === 'scorers') { const c = $('#infoFields [data-scorer-count]'); if (c) c.textContent = splitScorers(e.target.value).length; clearTimeout(scorerT); scorerT = setTimeout(refreshScorers, 300); }
   updatePreviewMeta();
 });
-$('#infoFields').addEventListener('click', e => {
+$('#infoFields').addEventListener('click', async e => {
+  if (e.target.closest('[data-opp-place]')) {
+    toast(await placeOpponentEmblem() ? '相手エンブレムの枠に入れました' : 'デザインに相手エンブレムの枠がありません', 'fa-shield-halved');
+    return;
+  }
   const d = e.target.closest('[data-fdel]'); if (!d) return;
   const f = infoFields.find(x => x.key === d.dataset.fdel);
   if (!confirm(`項目「${f.label}」を削除しますか？（デザインやテンプレート内の {${f.label}} はそのまま残ります）`)) return;
@@ -4342,8 +4538,8 @@ const CRAFT = {
 const frameOf = k => $('#frame-' + k);
 function craftHint(k) {
   return k === 'photocraft'
-    ? 'PhotoCraftで編集後、ファイル › 書き出し › PNG としてクイック書き出し で自動的にこのサイトへ取り込まれます'
-    : 'VectorCraftで編集後、「書き出してスライドに反映」を押してください';
+    ? 'スライドはレイヤー付きPSDで開きます。編集後 ファイル › 保存（Ctrl+S・PSD）でレイヤーのまま、PNG書き出しで画像1枚として戻ります'
+    : 'スライドはレイヤーごとに開きます。編集後「書き出してスライドに反映」でレイヤーのまま戻ります';
 }
 async function setCenterTab(t, { send = false } = {}) {
   if (location.protocol === 'file:' && t !== 'quick') {
@@ -4417,16 +4613,40 @@ function hookPhotoCraftExports(win) {
       fetch(this.href).then(r => r.blob()).then(b => onCraftExport('photocraft', b, name));
       return;
     }
+    if (this.download && this.href.startsWith('blob:') && /\.psd$/i.test(this.download)) {
+      const name = this.download;
+      fetch(this.href).then(r => r.arrayBuffer()).then(buf => onPhotoCraftPsd(buf, name))
+        .catch(e => toast('PSDを読み込めませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 4000));
+      return;
+    }
     return orig.call(this);
   };
 }
+async function onPhotoCraftPsd(buf, name) {
+  const agPsd = await loadAgPsd();
+  const psd = agPsd.readPsd(new Uint8Array(buf), { skipThumbnail: true });
+  const blob = await new Promise(r => (psd.canvas || layersComposite(psd)).toBlob(r, 'image/png'));
+  if (AC.asset && $('#assetCraftModal').classList.contains('open')) return onAssetCraftExport(blob);
+  onCraftExport('photocraft', blob, name, { psd });
+}
 async function sendSlideToCraft(k) {
   await ensureCraft(k);
+  const win = frameOf(k).contentWindow;
+  CRAFT[k].sentSlideId = CUR.post.slides[CUR.idx].id;
+  try {
+    if (k === 'vectorcraft') {
+      const svg = await slideToSVG();
+      await win.vectorcraft.execute('document.open', { name: `slide${CUR.idx + 1}.svg`, dataBase64: bytesToB64(new TextEncoder().encode(svg)) });
+    } else {
+      const buf = await slideToPSD();
+      dropIntoPhotoCraft(win, new win.File([buf], `slide${CUR.idx + 1}.psd`, { type: 'image/vnd.adobe.photoshop' }));
+    }
+    toast(`スライド${CUR.idx + 1}をレイヤーごと${CRAFT[k].name}で開きました`, 'fa-layer-group');
+    return;
+  } catch (e) { console.warn('layered send failed', e); }
   const url = renderDataURL(S.W, 'png');
   const blob = await dataURLtoBlob(url);
   const name = `slide${CUR.idx + 1}.png`;
-  const win = frameOf(k).contentWindow;
-  CRAFT[k].sentSlideId = CUR.post.slides[CUR.idx].id;
   try {
     if (k === 'vectorcraft') {
       win.vectorcraft.openFile(name, new Uint8Array(await blob.arrayBuffer()));
@@ -4449,17 +4669,228 @@ async function pullFromVectorCraft() {
   try {
     const r = await win.vectorcraft.request('app.export', { format: 'png', ppi: 72 });
     const blob = await dataURLtoBlob('data:image/png;base64,' + r.dataBase64);
-    onCraftExport('vectorcraft', blob, 'vectorcraft.png');
+    let svg = null;
+    try { const x = await win.vectorcraft.execute('document.export', { format: 'svg' }); svg = new TextDecoder().decode(b64ToBytes(x.dataBase64)); } catch (e) { /* the picture still comes */ }
+    onCraftExport('vectorcraft', blob, 'vectorcraft.png', svg ? { svg } : null);
   } catch (e) {
     toast('VectorCraftにドキュメントが開かれていません（' + e.message + '）', 'fa-triangle-exclamation', 'text-hot', 4000);
   }
 }
+/* ---------------- layers to and from PhotoCraft (PSD) and VectorCraft (SVG) ----------------
+   Every layer goes out under a name ending in "--<cid>" (its id in VectorCraft, its layer name in
+   PhotoCraft). What comes back under that name and still looks the same is the original layer
+   again, so texts stay editable texts, frames stay frames, info texts keep filling in. A layer that
+   was changed there comes back as that app's version (VectorCraft: paths and texts, PhotoCraft:
+   pixels); new layers come in as new ones, deleted ones stay deleted. */
+let agPsdP = null;
+const loadAgPsd = () => agPsdP || (agPsdP = new Promise((res, rej) => {
+  const sc = document.createElement('script'); sc.src = 'lib/ag-psd-31.0.3.js';
+  sc.onload = () => res(window.agPsd); sc.onerror = () => { agPsdP = null; rej(new Error('PSDライブラリを読み込めません')); };
+  document.head.appendChild(sc);
+}));
+function bytesToB64(bytes) { let b = ''; for (let i = 0; i < bytes.length; i += 8192) b += String.fromCharCode(...bytes.subarray(i, i + 8192)); return btoa(b); }
+const b64ToBytes = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+function layerTag(o) {
+  if (!o.cid) o.cid = uid();
+  let n = String(o.role === 'bg' ? '背景' : layerName(o)).replace(/[\s<>&"'\/\\:;,{}()\[\]#]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24) || 'layer';
+  if (!/^[A-Za-z_\u3040-\u9fff]/.test(n)) n = 'L_' + n;
+  return `${n}--${o.cid}`;
+}
+const cidOfTag = t => (String(t || '').match(/--([a-z0-9]+)$/i) || [])[1];
+function dropIntoPhotoCraft(win, file) {
+  const cv = win.document.getElementById('photocraft_canvas');
+  const dt = new win.DataTransfer(); dt.items.add(file);
+  const r = cv.getBoundingClientRect(), opt = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.width / 2, clientY: r.height / 2 };
+  ['dragenter', 'dragover', 'drop'].forEach(t => cv.dispatchEvent(new win.DragEvent(t, opt)));
+}
+/* what was sent, by cid: the layer as it was (to put back when it comes back unchanged) */
+function noteSent(k) {
+  const items = {};
+  canvas.getObjects().forEach(o => { layerTag(o); items[o.cid] = o.toObject(PROPS); });
+  CRAFT[k].sent = { slideId: CUR.post.slides[CUR.idx].id, items, order: canvas.getObjects().map(o => o.cid) };
+}
+async function slideToSVG() {
+  canvas.getObjects().forEach(o => { o.id = layerTag(o); });
+  noteSent('vectorcraft');
+  // images go in with their pixels (VectorCraft can't fetch our image URLs)
+  const imgs = [];
+  const walk = list => list.forEach(o => { if (o.type === 'image') imgs.push(o); if (o._objects) walk(o._objects); });
+  walk(canvas.getObjects());
+  imgs.forEach(o => {
+    o.__svgSrc = o.getSvgSrc;
+    o.getSvgSrc = function (filtered) {
+      const el = filtered ? this._element : this._originalElement;
+      try { const c = document.createElement('canvas'); c.width = el.naturalWidth || el.width; c.height = el.naturalHeight || el.height; c.getContext('2d').drawImage(el, 0, 0); return c.toDataURL('image/png'); }
+      catch (e) { return this.__svgSrc(filtered); }
+    };
+  });
+  const vt = canvas.viewportTransform, clip = canvas.clipPath;
+  canvas.viewportTransform = [1, 0, 0, 1, 0, 0]; canvas.clipPath = null;
+  try {
+    return canvas.toSVG({ width: S.W, height: S.H, viewBox: { x: 0, y: 0, width: S.W, height: S.H } });
+  } finally {
+    canvas.viewportTransform = vt; canvas.clipPath = clip;
+    imgs.forEach(o => { o.getSvgSrc = o.__svgSrc; delete o.__svgSrc; });
+    canvas.getObjects().forEach(o => { delete o.id; });
+  }
+}
+/* the slide drawn layer by layer at full size: one PSD layer per object, cut to its bounds */
+async function slideToPSD() {
+  const agPsd = await loadAgPsd();
+  canvas.getObjects().forEach(o => layerTag(o));
+  noteSent('photocraft');
+  const sc = new fabric.StaticCanvas(document.createElement('canvas'), { width: S.W, height: S.H, enableRetinaScaling: false, renderOnAddRemove: false });
+  await new Promise(r => sc.loadFromJSON(sceneJSON(), r));
+  normalizeImageSizes(sc);
+  const objs = sc.getObjects(), vis = objs.map(o => o.visible !== false), el = sc.lowerCanvasEl, children = [];
+  objs.forEach((o, i) => {
+    objs.forEach((x, j) => { x.visible = j === i; });
+    sc.renderAll();
+    const b = o.getBoundingRect(true, true), pad = Math.ceil((o.shadow ? o.shadow.blur + Math.max(Math.abs(o.shadow.offsetX), Math.abs(o.shadow.offsetY)) : 0) + (o.strokeWidth || 0) + 4);
+    const l = Math.max(0, Math.floor(b.left - pad)), t = Math.max(0, Math.floor(b.top - pad));
+    const w = Math.min(S.W, Math.ceil(b.left + b.width + pad)) - l, h = Math.min(S.H, Math.ceil(b.top + b.height + pad)) - t;
+    if (w < 1 || h < 1) return;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    c.getContext('2d').drawImage(el, l, t, w, h, 0, 0, w, h);
+    children.push({ name: layerTag(canvas.getObjects()[i]), left: l, top: t, canvas: c, hidden: !vis[i] });
+  });
+  objs.forEach((x, j) => { x.visible = vis[j]; });
+  sc.renderAll();
+  const comp = document.createElement('canvas'); comp.width = S.W; comp.height = S.H; comp.getContext('2d').drawImage(el, 0, 0);
+  sc.dispose();
+  return agPsd.writePsd({ width: S.W, height: S.H, canvas: comp, children });
+}
+function layersComposite(psd) {
+  const c = document.createElement('canvas'); c.width = psd.width; c.height = psd.height;
+  const ctx = c.getContext('2d');
+  const walk = list => list.forEach(l => { if (l.children) walk(l.children); else if (l.canvas && !l.hidden) { ctx.globalAlpha = l.opacity ?? 1; ctx.drawImage(l.canvas, l.left || 0, l.top || 0); } });
+  walk(psd.children || []);
+  return c;
+}
+/* "looks the same": both drawn at full size and compared pixel by pixel (every 2nd pixel); a
+   brush stroke or a recolour counts as a change, the rounding of a round trip does not */
+const LOOK = { sc: null };
+function lookOf(o, z = 1) {
+  if (!LOOK.sc) LOOK.sc = new fabric.StaticCanvas(document.createElement('canvas'), { enableRetinaScaling: false, renderOnAddRemove: false });
+  const sc = LOOK.sc, w = Math.round(S.W * z), h = Math.round(S.H * z);
+  if (sc.width !== w || sc.height !== h) sc.setDimensions({ width: w, height: h });
+  sc.setZoom(z);
+  const vis = o.visible; o.visible = true;
+  sc.clear(); sc.add(o); sc.renderAll();
+  const d = sc.getContext().getImageData(0, 0, w, h).data;
+  sc.remove(o); o.visible = vis; o.canvas = undefined;
+  return d;
+}
+/* vector = both are shapes drawn again (VectorCraft): compared smaller, edges may differ a little */
+function sameLook(a, b, vector = false) {
+  const z = vector ? 0.25 : 1, st = vector ? 1 : 2, W = Math.round(S.W * z), H = Math.round(S.H * z);
+  const x = lookOf(a, z), y = lookOf(b, z);
+  let sum = 0, n = 0, big = 0;
+  for (let r = 0; r < H; r += st) for (let c = 0; c < W; c += st) {
+    const i = (r * W + c) * 4;
+    if (!x[i + 3] && !y[i + 3]) continue;
+    const d = (Math.abs(x[i] - y[i]) + Math.abs(x[i + 1] - y[i + 1]) + Math.abs(x[i + 2] - y[i + 2]) + Math.abs(x[i + 3] - y[i + 3])) / 4;
+    n++; sum += d; if (d > 24) big++;
+  }
+  return !n || (vector ? sum / n < 8 && big / n < 0.08 : sum / n < 4 && big / n < 0.0005);
+}
+const enliven = json => new Promise(r => fabric.util.enlivenObjects([json], objs => r(objs[0])));
+/* a layer that came back: the original if it looks the same, else the new one with the original's name */
+async function matchLayer(cand, orig, vector = false) {
+  if (!orig) return cand;
+  const was = await enliven(orig);
+  if (was && sameLook(was, cand, vector)) return was;
+  cand.name = orig.name || cand.name; cand.cid = orig.cid;
+  if (cand.type === 'textbox' && orig.type === 'textbox' && orig.tpl && cand.text.replace(/\s+/g, '') === String(orig.text).replace(/\s+/g, '')) cand.tpl = orig.tpl;
+  if (orig.role === 'bg') cand.role = 'bg';
+  return cand;
+}
+/* SVG text (VectorCraft) → a text box that can be edited here */
+function textToBox(t, el) {
+  const spans = el ? [...el.querySelectorAll('tspan')] : [];
+  const lines = spans.length > 1 ? spans.map(x => x.textContent) : [t.text];
+  const props = {
+    left: t.left, top: t.top, originX: t.originX, originY: t.originY, angle: t.angle, scaleX: t.scaleX, scaleY: t.scaleY, skewX: t.skewX, flipX: t.flipX, flipY: t.flipY,
+    fontFamily: String(t.fontFamily || 'Noto Sans JP').split(',')[0].replace(/['"]/g, '').trim(),
+    fontSize: t.fontSize, fontWeight: t.fontWeight, fontStyle: t.fontStyle, fill: t.fill, stroke: t.stroke, strokeWidth: t.strokeWidth,
+    opacity: t.opacity, charSpacing: t.charSpacing, lineHeight: 1.16, textAlign: t.textAlign || 'left', name: 'テキスト',
+  };
+  const w = new fabric.Text(lines.join('\n'), props).width; // as wide as its longest line
+  return new fabric.Textbox(lines.join('\n'), { ...props, width: Math.ceil(w) + 4, splitByGrapheme: true });
+}
+async function svgToLayers(svg, sent) {
+  const { objs, els } = await new Promise(res => {
+    const els = new Map();
+    fabric.loadSVGFromString(svg, objs => res({ objs, els }), (el, obj) => { els.set(obj, el); });
+  });
+  const tagOf = o => { for (let el = els.get(o); el && el.nodeType === 1; el = el.parentNode) { const c = cidOfTag(el.getAttribute('id')); if (c) return c; } return null; };
+  // the artboard's own clip is not a layer's
+  const fullClip = c => c && c.width >= S.W - 2 && c.height >= S.H - 2;
+  const groups = [];
+  objs.forEach(o => {
+    if (fullClip(o.clipPath)) o.clipPath = null;
+    const cid = tagOf(o);
+    if (o.type === 'text') o = textToBox(o, els.get(o));
+    const last = groups[groups.length - 1];
+    if (cid && last && last.cid === cid) last.items.push(o); else groups.push({ cid, items: [o] });
+  });
+  const out = [];
+  for (const g of groups) {
+    const cand = g.items.length > 1 ? new fabric.Group(g.items) : g.items[0];
+    out.push(await matchLayer(cand, g.cid && sent?.items?.[g.cid], true));
+  }
+  return keepSilentLayers(out, sent);
+}
+async function psdToLayers(psd, sent) {
+  const flat = [];
+  const walk = list => list.forEach(l => { if (l.children) walk(l.children); else flat.push(l); });
+  walk(psd.children || []);
+  const out = [];
+  for (const l of flat) {
+    if (!l.canvas || !l.canvas.width || !l.canvas.height) continue; // adjustment / empty layers
+    const cid = cidOfTag(l.name), orig = cid && sent?.items?.[cid];
+    const cand = new fabric.Image(l.canvas, { left: l.left || 0, top: l.top || 0, opacity: l.opacity ?? 1, visible: !l.hidden, name: orig ? orig.name : (l.name || 'レイヤー') });
+    if (l.blendMode && { multiply: 1, screen: 1, overlay: 1, darken: 1, lighten: 1 }[l.blendMode]) cand.globalCompositeOperation = l.blendMode;
+    out.push(await matchLayer(cand, orig));
+  }
+  return keepSilentLayers(out, sent);
+}
+/* layers that draw nothing (an empty frame, a hidden text) don't survive the trip: they stay as they were */
+async function keepSilentLayers(out, sent) {
+  const order = sent?.order || [], have = new Set(out.map(o => o.cid));
+  for (let i = 0; i < order.length; i++) {
+    const it = sent.items[order[i]];
+    if (!it || have.has(order[i]) || !(it.opacity === 0 || it.visible === false)) continue;
+    const o = await enliven(it);
+    let at = 0; // just above the nearest layer below it that came back
+    for (let j = i - 1; j >= 0; j--) { const k = out.findIndex(x => x.cid === order[j]); if (k >= 0) { at = k + 1; break; } }
+    out.splice(at, 0, o); have.add(order[i]);
+  }
+  return out;
+}
+/* the slide's layers become these (the background stays if none of them is one) */
+function replaceSlideObjects(objs) {
+  HIST.lock = true;
+  canvas.discardActiveObject();
+  canvas.getObjects().slice().forEach(o => canvas.remove(o));
+  // (pixels from PhotoCraft are saved as a PNG picture and uploaded with the post like any other)
+  objs.forEach(o => { canvas.add(o); o.setCoords(); });
+  if (!getBg()) ensureBg();
+  HIST.lock = false;
+  scheduleClips();
+  S.dirty = true; canvas.requestRenderAll();
+  saveHistory(); schedulePostSave(); refreshLayers(); renderProps(); renderStrip();
+}
 let craftPending = null;
-function onCraftExport(k, blob, name) {
+function onCraftExport(k, blob, name, layered = null) {
   if (AC.asset && $('#assetCraftModal').classList.contains('open')) return onAssetCraftExport(blob);
   const fr = new FileReader();
   fr.onload = () => {
-    craftPending = { k, url: fr.result };
+    craftPending = { k, url: fr.result, layered };
+    $('#craftLayers').classList.toggle('hidden', !layered);
+    $('#craftReplace').classList.toggle('btn-accent', !layered);
+    $('#craftModalLayered').classList.toggle('hidden', !layered);
+    $('#craftModalApp2').textContent = CRAFT[k].name;
     const sentIdx = CUR.post.slides.findIndex(s => s.id === CRAFT[k].sentSlideId);
     craftPending.idx = sentIdx >= 0 ? sentIdx : CUR.idx;
     $('#craftModalApp').textContent = CRAFT[k].name;
@@ -4475,8 +4906,16 @@ function onCraftExport(k, blob, name) {
 async function applyCraftResult(mode) {
   if (!craftPending) return;
   closeModal('craftModal');
-  const { url, idx, k } = craftPending; craftPending = null;
+  const { url, idx, k, layered } = craftPending; craftPending = null;
   if (idx !== CUR.idx) await loadSlide(idx);
+  if (mode === 'layers') {
+    try {
+      const objs = layered.svg ? await svgToLayers(layered.svg, CRAFT[k].sent) : await psdToLayers(layered.psd, CRAFT[k].sent);
+      replaceSlideObjects(objs);
+      toast(`スライド${CUR.idx + 1}にレイヤーのまま反映しました（${objs.length}レイヤー）`, 'fa-layer-group');
+    } catch (e) { console.error(e); toast('レイヤーを読み込めませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 5000); }
+    return;
+  }
   if (mode === 'new') { if (!(await addSlide('blank'))) return; }
   HIST.lock = true;
   canvas.discardActiveObject();
@@ -4489,6 +4928,7 @@ async function applyCraftResult(mode) {
   toast(mode === 'new' ? `スライド${CUR.idx + 1}として追加しました` : `スライド${CUR.idx + 1}に反映しました`, 'fa-circle-check');
 }
 $('#craftReplace').addEventListener('click', () => applyCraftResult('replace'));
+$('#craftLayers').addEventListener('click', () => applyCraftResult('layers'));
 $('#craftAsNew').addEventListener('click', () => applyCraftResult('new'));
 $$('#centerTabs .mode-tab').forEach(b => b.addEventListener('click', () => { if (b.dataset.ctab !== S.tab) setCenterTab(b.dataset.ctab); }));
 $('#craftTools').addEventListener('click', e => {
