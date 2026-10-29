@@ -129,10 +129,12 @@ background: a short description and its main colour.`;
 /* Gemini has no strict schema here: the shape is spelled out, and the answer is tidied by normalizeDesign */
 const GEMINI_SHAPE = `Answer with JSON only, in this shape:
 {"background":{"description":string,"color":"#rrggbb"},
- "elements":[{"kind":"text"|"rect"|"ellipse"|"triangle"|"line","name":string,"x":number,"y":number,"w":number,"h":number,"rotation":number,
+ "elements":[{"kind":"text"|"rect"|"ellipse"|"triangle"|"line","name":string,"box_2d":[ymin,xmin,ymax,xmax],"rotation":number,
    "text":string|null,"font":one of ${JSON.stringify(DESIGN_FONTS)} or null,"weight":400|500|700|800|900|null,"italic":boolean,"align":"left"|"center"|"right",
    "letter_spacing":number,"line_height":number,"fill":{"type":"solid"|"gradient"|"none","color":"#rrggbb","color2":"#rrggbb"|null,"angle":number},
-   "stroke":{"color":string,"width":number}|null,"shadow":{"color":string,"blur":number,"offset_x":number,"offset_y":number}|null,"opacity":number,"corner_radius":number}]}`;
+   "stroke":{"color":string,"width":number}|null,"shadow":{"color":string,"blur":number,"offset_x":number,"offset_y":number}|null,"opacity":number,"corner_radius":number}]}
+box_2d is the element's bounding box on screen (as drawn, including its rotation), normalised to 0-1000: [ymin, xmin, ymax, xmax]. Stroke widths, blurs and offsets stay in pixels of the image.
+List every text you can read - a picture with lettering always has elements.`;
 const GEMINI_MODELS = ['gemini-3-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash'];
 async function geminiDesign(env, mime, b64, W, H) {
   const models = env.GEMINI_MODEL ? [env.GEMINI_MODEL] : GEMINI_MODELS;
@@ -172,6 +174,23 @@ async function geminiDesign(env, mime, b64, W, H) {
     }
   }
   throw new Error('使えるGeminiのモデルがありません（' + last + '）');
+}
+/* Gemini's own boxes ([ymin, xmin, ymax, xmax] in 0-1000, as drawn) → x, y, w, h in pixels before rotation */
+function fromBox2d(d, W, H) {
+  const list = d?.elements || d?.layers || d?.items || (Array.isArray(d) ? d : []);
+  const elements = list.map(e => {
+    const b = e?.box_2d || e?.box || e?.bbox;
+    if (!Array.isArray(b) || b.length !== 4) return e;
+    const [y0, x0, y1, x1] = b.map(Number);
+    const bw = (x1 - x0) / 1000 * W, bh = (y1 - y0) / 1000 * H, cx = (x0 + x1) / 2000 * W, cy = (y0 + y1) / 2000 * H;
+    // the upright size whose turned box is this one
+    const a = Math.abs(((+e.rotation || 0) % 180) * Math.PI / 180), c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a)), det = c * c - s * s;
+    let w = bw, h = bh;
+    if (Math.abs(det) > 0.2) { w = (bw * c - bh * s) / det; h = (bh * c - bw * s) / det; }
+    if (!(w > 1) || !(h > 1)) { w = bw; h = bh; }
+    return { ...e, x: cx - w / 2, y: cy - h / 2, w, h };
+  });
+  return { ...(Array.isArray(d) ? {} : d), elements };
 }
 /* fill in what an answer left out, so the page always gets the same shape */
 function normalizeDesign(d) {
@@ -290,7 +309,11 @@ const actions = {
     if (m[2].length > 4_500_000) throw new Error('画像が大きすぎます');
     const W = Math.round(+p.width) || 0, H = Math.round(+p.height) || 0;
     // Gemini (free tier) when its key is registered, otherwise Claude
-    if (env.GEMINI_API_KEY) return normalizeDesign(await geminiDesign(env, m[1], m[2], W, H));
+    if (env.GEMINI_API_KEY) {
+      const raw = await geminiDesign(env, m[1], m[2], W, H), d = normalizeDesign(fromBox2d(raw, W, H));
+      if (!d.elements.length) throw new Error('解析結果に文字が見つかりませんでした（返答：' + JSON.stringify(raw).slice(0, 160) + '）');
+      return d;
+    }
     const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
     const res = await client.beta.messages.create({
       model: 'claude-opus-5-5',
