@@ -136,22 +136,40 @@ const GEMINI_SHAPE = `Answer with JSON only, in this shape:
 const GEMINI_MODELS = ['gemini-3-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash'];
 async function geminiDesign(env, mime, b64, W, H) {
   const models = env.GEMINI_MODEL ? [env.GEMINI_MODEL] : GEMINI_MODELS;
-  const body = JSON.stringify({
-    contents: [{ role: 'user', parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: DESIGN_PROMPT.replace('{W}', W).replace('{H}', H) + '\n\n' + GEMINI_SHAPE }] }],
-    generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
-  });
+  const contents = [{ role: 'user', parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: DESIGN_PROMPT.replace('{W}', W).replace('{H}', H) + '\n\n' + GEMINI_SHAPE }] }];
+  // light thinking keeps a busy picture under the time limit (Gemini 3: thinkingLevel, 2.5: thinkingBudget)
+  const thinking = model => (/gemini-3/.test(model) ? { thinkingLevel: 'low' } : { thinkingBudget: 1024 });
   let last = '';
   for (const model of models) {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body,
-    });
-    if (r.status === 404) { last = model + ' が見つかりません'; continue; } // that model name isn't offered: try the next
-    if (r.status === 429) throw new Error('無料枠の上限に達しました。しばらく待ってからもう一度お試しください');
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error('解析サーバーのエラー：' + (j.error?.message || r.status));
-    const text = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join('');
-    if (!text) throw new Error('この画像は解析できませんでした');
-    try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (e) { throw new Error('解析結果を読み取れませんでした'); }
+    for (const withThinking of [true, false]) {
+      const generationConfig = { responseMimeType: 'application/json', temperature: 0.2, ...(withThinking ? { thinkingConfig: thinking(model) } : {}) };
+      // streamed, so the connection never sits idle long enough to time out
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify({ contents, generationConfig }),
+      });
+      if (r.status === 404) { last = model + ' が見つかりません'; break; } // that model name isn't offered: try the next
+      if (r.status === 429) throw new Error('無料枠の上限に達しました。しばらく待ってからもう一度お試しください');
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 400 && withThinking && /thinking/i.test(j.error?.message || '')) continue; // this model takes no thinking setting
+        throw new Error('解析サーバーのエラー：' + (j.error?.message || r.status));
+      }
+      const sse = await r.text();
+      let text = '', finish = '';
+      for (const line of sse.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        try {
+          const j = JSON.parse(line.slice(5));
+          if (j.error) throw new Error('解析サーバーのエラー：' + (j.error.message || ''));
+          const c = j.candidates?.[0];
+          text += (c?.content?.parts || []).filter(x => !x.thought).map(x => x.text || '').join('');
+          if (c?.finishReason) finish = c.finishReason;
+        } catch (e) { if (/解析サーバー/.test(e.message)) throw e; }
+      }
+      if (!text) throw new Error(finish === 'SAFETY' ? 'この画像は解析できませんでした' : '解析結果が空でした（' + (finish || '不明') + '）');
+      try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')); }
+      catch (e) { throw new Error(finish === 'MAX_TOKENS' ? '要素が多すぎて解析しきれませんでした' : '解析結果を読み取れませんでした'); }
+    }
   }
   throw new Error('使えるGeminiのモデルがありません（' + last + '）');
 }
