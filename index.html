@@ -2114,9 +2114,38 @@ function fillInfo(text, info = S.info, team = teamOf(info)) {
   return String(text).replace(/\{([^{}\n]+)\}/g, (m, k) => (k in byName ? byName[k] : m));
 }
 const hasPlaceholder = t => /\{[^{}\n]+\}/.test(t || '');
+/* the info texts of the built-in designs, by layer name ("スコア" → "{相手スコア} - {自チームスコア}");
+   a name used with different templates is left out */
+let NAME_TPL = null;
+function nameTemplates() {
+  if (NAME_TPL) return NAME_TPL;
+  const i2 = {}; infoFields.forEach(f => { i2[f.key] = `{${f.label}}`; });
+  const map = {}, bad = new Set();
+  Object.values(PRESETS).forEach(p => {
+    let objs; try { const r = p.build({ W: 1080, H: 1350, t: { ...S.team, name: '{チーム名}' }, i: i2, k: 1 }); objs = Array.isArray(r) ? r : r.objects; } catch (e) { return; }
+    objs.forEach(o => {
+      if (o.type !== 'textbox' || o.scorerBox || !o.name || !hasPlaceholder(o.text)) return;
+      if (map[o.name] && map[o.name] !== o.text) bad.add(o.name); else map[o.name] = o.text;
+    });
+  });
+  bad.forEach(n => delete map[n]);
+  return (NAME_TPL = map);
+}
+/* a design text that lost its template (typed over by hand, or from an older design) gets it back
+   when it still has the template's shape: "0 - 3" under the name スコア follows the scores again */
+function relinkInfoTexts() {
+  const map = nameTemplates();
+  canvas.getObjects().forEach(o => {
+    if (o.type !== 'textbox' || o.tpl || o.scorerBox || !map[o.name]) return;
+    const t = map[o.name];
+    const re = new RegExp('^' + t.split(/\{[^{}\n]+\}/).map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s\\S]*?') + '$');
+    if (re.test(o.text.trim())) o.tpl = t;
+  });
+}
 /* texts that came from a preset with placeholders keep them in `tpl`; refill them from the info */
 function fillTplTexts() {
   let n = 0;
+  if (CUR.kind === 'post') relinkInfoTexts();
   canvas.getObjects().forEach(o => {
     if (o.type === 'textbox' && o.tpl) { o.set('text', fillInfo(o.tpl)); o.initDimensions(); fitNoWrap(o); if (o.gradFill) applyGradFill(o); o.setCoords(); n++; }
   });
@@ -3750,6 +3779,15 @@ function slideInfoOf(sl) {
   if (sl === CUR.post.slides[CUR.idx]) return S.info;
   return { ...INFO_DEFAULT, ...(CUR.post.info || {}), ...(sl.info || {}) };
 }
+const SHARED_INFO = ['competition', 'date', 'time', 'venue'];
+function shareInfo(k, old, v) {
+  if (!CUR.post || CUR.kind !== 'post' || !SHARED_INFO.includes(k)) return;
+  CUR.post.slides.forEach(sl => {
+    if (sl === CUR.post.slides[CUR.idx]) return;
+    const cur = slideInfoOf(sl)[k];
+    if (String(cur ?? '') === String(old ?? '')) sl.info = { ...slideInfoOf(sl), [k]: v };
+  });
+}
 function commitInfo() {
   if (!CUR.post || CUR.kind !== 'post') return;
   const sl = CUR.post.slides[CUR.idx]; if (sl) sl.info = { ...S.info };
@@ -3757,6 +3795,7 @@ function commitInfo() {
   schedulePostSave();
 }
 function setInfo(k, v) {
+  shareInfo(k, S.info[k], v);
   S.info[k] = v; store.set('info', S.info);
   commitInfo();
   const el = $(`#infoFields [data-info="${k}"]`); if (el && document.activeElement !== el) el.value = v;
@@ -3983,6 +4022,7 @@ function scheduleInfoTexts() {
 $('#infoFields').addEventListener('input', e => {
   if (e.target.matches('[data-team-name]')) { S.info.teamName = e.target.value; commitInfo(); scheduleInfoTexts(); updatePreviewMeta(); return; }
   const k = e.target.dataset.info; if (!k) return;
+  shareInfo(k, S.info[k], e.target.value);
   S.info[k] = e.target.value; store.set('info', S.info);
   commitInfo();
   if (k in { competition: 1, venue: 1, opponent: 1, date: 1 }) fillMatchInfo();
