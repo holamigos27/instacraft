@@ -333,6 +333,7 @@
       <div class="flex items-center gap-1 flex-shrink-0 py-1" id="quickTools"></div>
       <div class="hidden items-center gap-1.5 overflow-x-auto min-w-0 flex-1 py-1" id="craftTools">
         <button class="mini-btn flex items-center gap-1.5" data-ct="send"><i class="fa-solid fa-file-import text-accent"></i><span>スライド<b class="ctSlide">1</b>を開く</span></button>
+        <button class="mini-btn flex items-center gap-1.5" data-ct="cutPerson" id="ctCut" title="クイック編集で選んでいる写真（なければファイル）の人物をAIで切り抜いて、PhotoCraftで開きます"><i class="fa-solid fa-user text-accent"></i>人物を切り抜く（AI）</button>
         <button class="mini-btn flex items-center gap-1.5" data-ct="pull" id="ctPull"><i class="fa-solid fa-file-export text-accent"></i>書き出してスライドに反映</button>
         <span class="text-[11px] text-slate-400 truncate" id="craftHint"></span>
       </div>
@@ -2634,7 +2635,14 @@ function pickFileRaw() {
     inp.onchange = () => res(inp.files[0] || null); inp.click();
   });
 }
-const loadImg = src => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('画像を読み込めません')); im.src = src; });
+// stored images come from another origin (the instaCRAFT server, CORS *): asked for with CORS so their pixels can be read
+const loadImg = src => new Promise((res, rej) => { const im = new Image(); if (!/^(data|blob):/.test(src)) im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = () => rej(new Error('画像を読み込めません')); im.src = src; });
+/* a layer's picture in a form whose pixels can be read: one loaded without CORS is loaded again with it */
+async function readableElement(img) {
+  const el = img._originalElement || img.getElement();
+  try { const t = document.createElement('canvas'); t.width = t.height = 1; const x = t.getContext('2d'); x.drawImage(el, 0, 0, 1, 1); x.getImageData(0, 0, 1, 1); return el; }
+  catch (e) { const src = img.getSrc(); return loadImg(src + (src.includes('?') ? '&' : '?') + 'cors=1'); }
+}
 const fileURL = f => new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(f); });
 function busy(on, text = '') {
   let el = $('#busyOverlay');
@@ -3512,7 +3520,7 @@ canvas.on('mouse:up', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && BRUSH.mode) stopBrush(); });
 async function applyBrush(img, mode, pts, size) {
-  const el = img._originalElement || img.getElement(), nw = el.naturalWidth || el.width, nh = el.naturalHeight || el.height;
+  const el = await readableElement(img), nw = el.naturalWidth || el.width, nh = el.naturalHeight || el.height;
   const fx = nw / img.width, fy = nh / img.height;
   const inv = fabric.util.invertTransform(img.calcTransformMatrix()), m = img.calcTransformMatrix();
   const scale = Math.hypot(m[0], m[1]) || 1;
@@ -3579,7 +3587,7 @@ async function setImagePixels(img, work) {
 /* one click: the people in an image layer are kept, the rest goes transparent (the picture as it was
    stays with the layer, so the 元に戻す brush can bring parts back) */
 async function cutPersonLayer(img) {
-  const el = img._originalElement || img.getElement(), nw = el.naturalWidth || el.width, nh = el.naturalHeight || el.height;
+  const el = await readableElement(img), nw = el.naturalWidth || el.width, nh = el.naturalHeight || el.height;
   const work = document.createElement('canvas'); work.width = nw; work.height = nh;
   const wx = work.getContext('2d'); wx.drawImage(el, 0, 0, nw, nh);
   busy(true, '人物を切り抜いています…（初回はAIの準備に少しかかります）');
@@ -5611,6 +5619,7 @@ async function setCenterTab(t, { send = false } = {}) {
   if (quick) { document.body.classList.remove('craft-max'); setTimeout(() => { fitCanvas(); fitCenterBar(); }, 0); return; }
   Object.keys(CRAFT).forEach(k => frameOf(k).classList.toggle('hidden', k !== t));
   $('#ctPull').classList.toggle('hidden', t !== 'vectorcraft');
+  $('#ctCut').classList.toggle('hidden', t !== 'photocraft');
   $('#craftHint').textContent = craftHint(t);
   await ensureCraft(t);
   if (send) await sendSlideToCraft(t);
@@ -5714,6 +5723,36 @@ async function sendSlideToCraft(k) {
   } catch (e) {
     toast(`${CRAFT[k].name}に画像を渡せませんでした`, 'fa-triangle-exclamation', 'text-hot');
   }
+}
+/* PhotoCraft's own 背景を削除 guesses the subject from colour alone; this uses the matting AI instead.
+   PhotoCraft has no page API, so the work is done here and the result goes in as a file: the photo
+   chosen in quick edit is cut out in place and the slide reopens with it; with no photo, a file is
+   asked for and its cut-out (a transparent PNG) opens on its own. */
+async function cutPersonForPhotoCraft() {
+  const a = canvas.getActiveObject();
+  const img = a && a.type === 'image' ? a : CUR.post ? targetImage() : null;
+  if (img) {
+    await cutPersonLayer(img);
+    if (img.cutOrig) await sendSlideToCraft('photocraft');
+    return;
+  }
+  const f = await pickFileRaw(); if (!f) return;
+  try {
+    busy(true, '人物を切り抜いています…（初回はAIの準備に少しかかります）');
+    const im = await loadImg(await fileURL(f)), c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+    const cx = c.getContext('2d'); cx.drawImage(im, 0, 0);
+    const alpha = new Uint8Array(c.width * c.height);
+    if (!(await segmentPerson(c, alpha))) { busy(false); return toast('人物が見つかりませんでした', 'fa-circle-info', 'text-sky'); }
+    const d = cx.getImageData(0, 0, c.width, c.height);
+    for (let i = 0; i < alpha.length; i++) d.data[i * 4 + 3] = alpha[i];
+    cx.putImageData(d, 0, 0);
+    const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+    await ensureCraft('photocraft');
+    const win = frameOf('photocraft').contentWindow;
+    dropIntoPhotoCraft(win, new win.File([blob], f.name.replace(/\.[^.]+$/, '') + '_切り抜き.png', { type: 'image/png' }));
+    busy(false);
+    toast('人物を切り抜いてPhotoCraftで開きました', 'fa-user', 'text-accent', 4000);
+  } catch (e) { busy(false); toast('切り抜けませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 5000); }
 }
 async function pullFromVectorCraft() {
   await ensureCraft('vectorcraft');
@@ -5987,6 +6026,7 @@ $('#craftTools').addEventListener('click', e => {
   const b = e.target.closest('[data-ct]'); if (!b) return;
   if (b.dataset.ct === 'send') sendSlideToCraft(S.tab);
   if (b.dataset.ct === 'pull') pullFromVectorCraft();
+  if (b.dataset.ct === 'cutPerson') cutPersonForPhotoCraft();
 });
 $('#btnCraftMax').addEventListener('click', () => {
   document.body.classList.toggle('craft-max');
