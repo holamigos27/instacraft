@@ -1235,19 +1235,20 @@ function remoteStore(kind) {
   return {
     async all() { return (await api('icList', { kind })).map(unwrap); },
     async get(id) { const d = await api('icGet', { kind, id }); if (d) VERS[kind + id] = d._v; return unwrap(d) || undefined; },
-    async put(doc) {
+    async put(doc, { statusChange = false } = {}) {
       for (const s of doc.slides || []) if (s.state) s.state = await externalizeImages(s.state);
       const { updatedBy, ...clean } = doc;
-      let r = await api('icPut', { kind, doc: clean, baseVersion: VERS[kind + doc.id] || 0 });
+      let r = await api('icPut', { kind, doc: clean, baseVersion: VERS[kind + doc.id] || 0, statusChange });
       if (r.conflict) {
         const who = r.by ? `${r.by} さん` : 'ほかの人';
         if (!confirm(`この${kind === 'post' ? '投稿' : 'プリセット'}は、${who}が先に更新しています。\n\nOK：自分の内容で上書き保存する\nキャンセル：保存せずに、最新の内容を読み込み直す`)) {
           VERS[kind + doc.id] = r.version;
           throw new Error('RELOAD');
         }
-        r = await api('icPut', { kind, doc: clean, force: true });
+        r = await api('icPut', { kind, doc: clean, force: true, statusChange });
       }
       VERS[kind + doc.id] = r.version;
+      if (r.kept) Object.assign(doc, r.kept); // it had been posted meanwhile: it stays posted
       doc.updatedBy = adminName();
     },
     async del(id) { await api('icDelete', { kind, id }); delete VERS[kind + id]; },
@@ -5520,7 +5521,7 @@ async function renderHome() {
       </div>
       <div><span class="badge ${typeBadge(p.type)}">${esc(typeLabel(p.type))}</span></div>
       <div class="text-xs text-slate-300"><i class="fa-regular fa-images text-slate-500 mr-1"></i>${n}枚</div>
-      <div>${posted ? `<span class="badge bg-accent/15 text-accent"><i class="fa-solid fa-check"></i>投稿済み</span>${p.permalink ? `<a href="${esc(p.permalink)}" target="_blank" rel="noopener" class="block text-[10px] text-sky mt-1 hover:underline">投稿を見る</a>` : `<div class="text-[10px] text-slate-500 mt-1">${fmtDateTime(p.postedAt)}</div>`}` : '<span class="badge bg-amber-400/10 text-amber-300"><i class="fa-solid fa-pen"></i>下書き</span>'}</div>
+      <div class="relative">${posted ? `<button class="badge bg-accent/15 text-accent hover:ring-1 hover:ring-accent/60" data-pa="status" title="クリックで状態を変更"><i class="fa-solid fa-check"></i>投稿済み<i class="fa-solid fa-caret-down text-[9px] ml-0.5"></i></button>${p.permalink ? `<a href="${esc(p.permalink)}" target="_blank" rel="noopener" class="block text-[10px] text-sky mt-1 hover:underline">投稿を見る</a>` : `<div class="text-[10px] text-slate-500 mt-1">${fmtDateTime(p.postedAt)}</div>`}` : '<button class="badge bg-amber-400/10 text-amber-300 hover:ring-1 hover:ring-amber-300/60" data-pa="status" title="クリックで状態を変更"><i class="fa-solid fa-pen"></i>下書き<i class="fa-solid fa-caret-down text-[9px] ml-0.5"></i></button>'}</div>
       <div class="flex justify-end gap-1.5">
         <button class="btn !px-2.5 !py-1.5" data-pa="edit"><i class="fa-solid fa-pen-to-square"></i>編集</button>
         <button class="btn !px-2.5 !py-1.5" data-pa="copy" title="コピーして新しい下書きを作成"><i class="fa-regular fa-copy"></i>コピー</button>
@@ -5529,6 +5530,32 @@ async function renderHome() {
     </div>`;
   }).join('');
 }
+/* the posted / draft status can be set by hand (posted outside the app, or a mistake) */
+const statusMenu = document.createElement('div');
+statusMenu.className = 'hidden fixed z-50 bg-panel2 border border-line rounded-lg shadow-2xl py-1 text-[12px] min-w-[150px]';
+document.body.appendChild(statusMenu);
+function openStatusMenu(btn, id) {
+  const r = btn.getBoundingClientRect();
+  statusMenu.innerHTML = `
+    <button class="w-full text-left px-3 py-1.5 hover:bg-white/10 flex items-center gap-2" data-st="posted"><i class="fa-solid fa-check text-accent w-4"></i>投稿済みにする</button>
+    <button class="w-full text-left px-3 py-1.5 hover:bg-white/10 flex items-center gap-2" data-st="draft"><i class="fa-solid fa-pen text-amber-300 w-4"></i>下書きに戻す</button>`;
+  statusMenu.dataset.id = id;
+  statusMenu.style.left = Math.min(r.left, innerWidth - 170) + 'px'; statusMenu.style.top = (r.bottom + 4) + 'px';
+  statusMenu.classList.remove('hidden');
+}
+document.addEventListener('mousedown', e => { if (!statusMenu.contains(e.target) && !e.target.closest('[data-pa="status"]')) statusMenu.classList.add('hidden'); });
+statusMenu.addEventListener('click', async e => {
+  const b = e.target.closest('[data-st]'); if (!b) return;
+  statusMenu.classList.add('hidden');
+  const p = await DB.posts.get(statusMenu.dataset.id); if (!p) return;
+  const st = b.dataset.st;
+  if ((p.status || 'draft') === st) return;
+  if (st === 'posted') { p.status = 'posted'; p.postedAt = p.postedAt || Date.now(); p.postedVia = p.postedVia || 'manual'; }
+  else { if (!confirm(`「${p.title || '（無題）'}」を下書きに戻しますか？`)) return; p.status = 'draft'; }
+  try { await DB.posts.put(p, { statusChange: true }); } catch (err) { if (err.message !== 'RELOAD') toast('変更できませんでした：' + err.message, 'fa-triangle-exclamation', 'text-hot', 4000); }
+  toast(st === 'posted' ? '投稿済みにしました' : '下書きに戻しました', st === 'posted' ? 'fa-check' : 'fa-pen');
+  renderHome();
+});
 ['input', 'change'].forEach(ev => ['#homeSearch', '#homeStatus', '#homeType', '#homeSort'].forEach(id => $(id).addEventListener(ev, renderHome)));
 $('#postList').addEventListener('click', async e => {
   if (e.target.closest('[data-new]')) return openNewModal();
@@ -5536,6 +5563,7 @@ $('#postList').addEventListener('click', async e => {
   const act = e.target.closest('[data-pa]')?.dataset.pa; if (!act) return;
   const id = row.dataset.pid;
   if (act === 'edit') location.hash = '#/post/' + id;
+  if (act === 'status') { openStatusMenu(e.target.closest('[data-pa]'), id); return; }
   if (act === 'copy') {
     const p = await DB.posts.get(id);
     const c = JSON.parse(JSON.stringify(p));

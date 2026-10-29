@@ -100,15 +100,27 @@ const actions = {
     const kind = kindOf(p);
     const { _v, _by, ...doc } = p.doc || {};
     const id = idOf(doc.id);
-    const cur = await env.DB.prepare('SELECT version, updated_by, updated_at FROM docs WHERE kind = ? AND id = ?').bind(kind, id).first();
+    const cur = await env.DB.prepare('SELECT version, updated_by, updated_at, data FROM docs WHERE kind = ? AND id = ?').bind(kind, id).first();
     if (cur && !p.force && Number(p.baseVersion || 0) !== cur.version) return { conflict: true, version: cur.version, by: cur.updated_by, at: cur.updated_at };
+    // a post that was posted stays posted when a copy opened before posting is saved over it;
+    // only an explicit status change (the list's status menu) turns it back into a draft
+    let kept = false;
+    if (cur && kind === 'post' && !p.statusChange) {
+      try {
+        const old = JSON.parse(cur.data);
+        if (old.status === 'posted' && doc.status !== 'posted') {
+          for (const k of ['status', 'postedAt', 'permalink', 'postedTo', 'postedVia']) if (old[k] !== undefined) doc[k] = old[k];
+          kept = true;
+        }
+      } catch (e) { /* unreadable old copy: save as sent */ }
+    }
     const data = JSON.stringify(doc);
     if (data.length > MAX_DOC_CHARS) throw new Error('データが大きすぎます（スライドや画像を減らしてください）');
     const version = (cur ? cur.version : 0) + 1;
     await env.DB.prepare(
       'INSERT INTO docs (kind, id, version, updated_at, updated_by, data) VALUES (?,?,?,?,?,?) ON CONFLICT(kind, id) DO UPDATE SET version = excluded.version, updated_at = excluded.updated_at, updated_by = excluded.updated_by, data = excluded.data',
     ).bind(kind, id, version, Date.now(), who.name, data).run();
-    return { version };
+    return kept ? { version, kept: { status: doc.status, postedAt: doc.postedAt, permalink: doc.permalink } } : { version };
   },
   async icDelete(p, env) {
     await env.DB.prepare('DELETE FROM docs WHERE kind = ? AND id = ?').bind(kindOf(p), idOf(p.id)).run();
