@@ -1600,6 +1600,7 @@ function loadSnapshot(str) {
       normalizeImageSizes(canvas);
       ensureBg();
       canvas.getObjects().forEach(o => { if (o.locked) o.set({ hasControls: false }); });
+      setClipBaselines();
       fitCanvas(); canvas.renderAll();
       HIST.lock = false;
       refreshLayers(); renderProps(); renderBgCustom(); highlightPreset();
@@ -1663,6 +1664,7 @@ canvas.on('selection:updated', onSel);
 canvas.on('selection:cleared', onSel);
 let zoomHinted = false;
 function onSel(e) {
+  if (CLIP_EDIT.obj && canvas.getActiveObject() !== CLIP_EDIT.obj) CLIP_EDIT.obj = null; // left the picture inside the mask
   renderProps(); refreshLayersSoon(); syncObjBar();
   const o = canvas.getActiveObject();
   if (o && o.type === 'image' && !zoomHinted && S.tab === 'quick' && handlesHidden(o)) {
@@ -2535,11 +2537,42 @@ function selectAllObjects() {
 }
 
 /* ---------------- image filters ---------------- */
+/* gradient map: the picture's lightness picked from three colours (shadow, middle, light): a duotone */
+fabric.Image.filters.GradientMap = fabric.util.createClass(fabric.Image.filters.BaseFilter, {
+  type: 'GradientMap',
+  colors: ['#000000', '#808080', '#ffffff'],
+  mainParameter: 'colors',
+  fragmentSource: `precision highp float;
+    uniform sampler2D uTexture; uniform vec3 uC0; uniform vec3 uC1; uniform vec3 uC2; varying vec2 vTexCoord;
+    void main() {
+      vec4 c = texture2D(uTexture, vTexCoord);
+      float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+      vec3 o = l < 0.5 ? mix(uC0, uC1, l * 2.0) : mix(uC1, uC2, (l - 0.5) * 2.0);
+      gl_FragColor = vec4(o, c.a);
+    }`,
+  rgb() { return this.colors.map(x => new fabric.Color(x).getSource().slice(0, 3)); },
+  applyTo2d(options) {
+    const d = options.imageData.data, [a, b, c] = this.rgb();
+    for (let i = 0; i < d.length; i += 4) {
+      const l = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+      const [p, q, t] = l < 0.5 ? [a, b, l * 2] : [b, c, (l - 0.5) * 2];
+      d[i] = p[0] + (q[0] - p[0]) * t; d[i + 1] = p[1] + (q[1] - p[1]) * t; d[i + 2] = p[2] + (q[2] - p[2]) * t;
+    }
+  },
+  getUniformLocations(gl, program) { return { uC0: gl.getUniformLocation(program, 'uC0'), uC1: gl.getUniformLocation(program, 'uC1'), uC2: gl.getUniformLocation(program, 'uC2') }; },
+  sendUniformData(gl, u) { const [a, b, c] = this.rgb(); gl.uniform3fv(u.uC0, a.map(v => v / 255)); gl.uniform3fv(u.uC1, b.map(v => v / 255)); gl.uniform3fv(u.uC2, c.map(v => v / 255)); },
+  toObject() { return { type: this.type, colors: this.colors.slice() }; },
+});
+fabric.Image.filters.GradientMap.fromObject = fabric.Image.filters.BaseFilter.fromObject;
+/* a duotone of one colour: deep shadow, the colour itself, near-white light */
+const mixHex = (a, b, t) => { const x = new fabric.Color(a).getSource(), y = new fabric.Color(b).getSource(); return '#' + [0, 1, 2].map(i => Math.round(x[i] + (y[i] - x[i]) * t).toString(16).padStart(2, '0')).join(''); };
+const duoColors = c => [mixHex(c, '#000000', 0.75), c, mixHex(c, '#ffffff', 0.85)];
 const FX_PRESETS = {
   orig: {}, mono: { gray: true, c: 0.15 }, vivid: { s: 0.45, c: 0.12 }, warm: { tintColor: '#ff9a3c', tint: 0.22, s: 0.1 },
-  cool: { tintColor: '#3c8cff', tint: 0.22 }, drama: { c: 0.35, b: -0.08, s: -0.2 }, sepia: { sepia: true }, team: { tint: 0.45 }
+  cool: { tintColor: '#3c8cff', tint: 0.22 }, drama: { c: 0.35, b: -0.08, s: -0.2 }, sepia: { sepia: true }, team: { tint: 0.45 },
+  red: { duo: '#ff0a0a', c: 0.12 }, duoTeam: { duo: 'team', c: 0.12 },
 };
-const FX_LABEL = { orig: 'オリジナル', mono: 'モノクロ', vivid: 'ビビッド', warm: 'ウォーム', cool: 'クール', drama: 'ドラマ', sepia: 'セピア', team: 'チーム色' };
+const FX_LABEL = { orig: 'オリジナル', mono: 'モノクロ', vivid: 'ビビッド', warm: 'ウォーム', cool: 'クール', drama: 'ドラマ', sepia: 'セピア', team: 'チーム色', red: 'レッド', duoTeam: 'チームデュオ' };
 function applyFx(img) {
   const f = img.fx || {}, F = fabric.Image.filters, arr = [];
   if (f.b) arr.push(new F.Brightness({ brightness: f.b }));
@@ -2549,6 +2582,7 @@ function applyFx(img) {
   if (f.gray) arr.push(new F.Grayscale());
   if (f.sepia) arr.push(new F.Sepia());
   if (f.tint) arr.push(new F.BlendColor({ color: f.tintColor || S.team.primary, mode: 'multiply', alpha: f.tint }));
+  if (f.duo) arr.push(new F.GradientMap({ colors: duoColors(f.duo === 'team' ? S.team.primary : f.duo) }));
   if (f.bl) arr.push(new F.Blur({ blur: f.bl }));
   // recolor: every visible pixel takes the color, transparency is kept (white logo -> team color, …)
   if (f.recolor) arr.push(new F.BlendColor({ color: f.recolor, mode: 'tint', alpha: 1 }));
@@ -2646,12 +2680,66 @@ function releaseClip(o) {
   o.clipPath = slot && slotKindOf(slot) === 'photo' ? slotClip(slot) : null; // a photo goes back to its frame
   o.dirty = true;
 }
+/* Like an Illustrator clip group: a click on a clipped picture picks its base shape, and moving,
+   resizing or turning the base takes the pictures inside along. Double-click edits the picture
+   inside the mask (its position and size); clicking elsewhere ends that. */
+const CLIP_EDIT = { obj: null };
+const clipFollowers = base => base.cid ? canvas.getObjects().filter(o => o.clipTo === base.cid && o !== base) : [];
+function followBase(base) {
+  const fl = clipFollowers(base); if (!fl.length) return;
+  const now = base.calcTransformMatrix();
+  if (base._clipM && now.some((v, i) => Math.abs(v - base._clipM[i]) > 1e-9)) {
+    const d = fabric.util.multiplyTransformMatrices(now, fabric.util.invertTransform(base._clipM));
+    fl.forEach(o => {
+      if (o.group) return; // moved together in one selection
+      fabric.util.applyTransformToObject(o, fabric.util.multiplyTransformMatrices(d, o.calcTransformMatrix()));
+      o.setCoords();
+    });
+  }
+  base._clipM = now;
+  fl.forEach(refreshClip);
+}
+function setClipBaselines() { canvas.getObjects().forEach(o => { if (clipFollowers(o).length) o._clipM = o.calcTransformMatrix(); }); }
 let clipT = 0;
 function scheduleClips() {
   clearTimeout(clipT);
-  clipT = setTimeout(() => canvas.getObjects().forEach(o => { if (o.clipTo) refreshClip(o); }), 16);
+  clipT = setTimeout(() => canvas.getObjects().forEach(o => {
+    if (clipFollowers(o).length) followBase(o);
+    if (o.clipTo) refreshClip(o);
+  }), 16);
 }
-['object:moving', 'object:scaling', 'object:rotating', 'object:skewing', 'object:removed'].forEach(ev => canvas.on(ev, scheduleClips));
+['object:moving', 'object:scaling', 'object:rotating', 'object:skewing'].forEach(ev => canvas.on(ev, e => {
+  const t = e.target; if (!t) return;
+  (t.type === 'activeSelection' ? t.getObjects() : [t]).forEach(x => { if (clipFollowers(x).length) followBase(x); });
+  scheduleClips();
+}));
+canvas.on('object:removed', scheduleClips);
+canvas.on('mouse:down:before', setClipBaselines);
+// a click on a clipped picture lands on its base (inside the mask), or on whatever is under it (outside)
+const findTargetPlain = canvas.findTarget.bind(canvas);
+canvas.findTarget = function (e, skipGroup) {
+  let t = findTargetPlain(e, skipGroup);
+  const off = [];
+  try {
+    for (let n = 0; n < 50 && t && t.clipTo && t !== CLIP_EDIT.obj; n++) {
+      const base = clipBaseOf(t);
+      const pt = this.getPointer(e, true);
+      if (base && base.visible !== false && base.containsPoint(new fabric.Point(pt.x, pt.y))) { t = base; break; }
+      off.push([t, t.evented]); t.evented = false;
+      t = findTargetPlain(e, skipGroup);
+    }
+  } finally { off.forEach(([o, ev]) => { o.evented = ev; }); }
+  return t;
+};
+canvas.on('mouse:dblclick', e => {
+  const base = e.target; if (!base || base.clipTo) return;
+  const fl = clipFollowers(base).filter(o => o.visible !== false && !o.locked); if (!fl.length) return;
+  if (base.isEditing) base.exitEditing();
+  const img = fl[fl.length - 1];
+  CLIP_EDIT.obj = img;
+  canvas.setActiveObject(img); canvas.requestRenderAll();
+  toast('マスクの中の画像を編集中（位置・大きさを調整できます。外側をクリックで終了）', 'fa-scissors', 'text-sky', 3500);
+});
 function toggleClip(o) {
   if (o.clipTo) { releaseClip(o); toast('クリッピングマスクを解除しました', 'fa-scissors'); }
   else {
@@ -2660,7 +2748,7 @@ function toggleClip(o) {
     while (base && base.clipTo && clipBaseOf(base)) base = clipBaseOf(base); // clipped layers share their base
     if (!base || base.role === 'bg') return toast('下にレイヤーがないため、クリッピングマスクを作れません', 'fa-circle-info', 'text-sky');
     if (!base.cid) base.cid = uid();
-    o.clipTo = base.cid; refreshClip(o);
+    o.clipTo = base.cid; refreshClip(o); base._clipM = base.calcTransformMatrix();
     toast(`「${layerName(base)}」の形で切り抜きました（もう一度 Alt+クリックで解除）`, 'fa-scissors');
   }
   canvas.requestRenderAll(); markDirty(o); saveHistory(); refreshLayers();
@@ -2801,7 +2889,7 @@ function applySize(dim, v) {
   else if (dim === 'w') o.set('scaleX', v / o.width);
   else o.set('scaleY', v / o.height);
   if (o.type === 'image') o.fullBleed = false;
-  o.setCoords(); canvas.requestRenderAll(); markDirty(o); saveHistory(); syncSizeInputs();
+  o.setCoords(); scheduleClips(); canvas.requestRenderAll(); markDirty(o); saveHistory(); syncSizeInputs();
 }
 function renderProps() {
   const el = $('#props'), o = canvas.getActiveObject();
@@ -2936,7 +3024,8 @@ function imagePropsHTML(o) {
       C.color('fx_recolor', f.recolor ? '色（透明部分はそのまま）' : '色を選ぶと全体がその色になります', f.recolor || '#ffffff') +
       (f.recolor ? C.btns([['recolorOff', '<i class="fa-solid fa-rotate-left mr-1"></i>元の色に戻す']]) : '')) +
     C.sec('fa-wand-magic-sparkles', 'フィルタープリセット',
-      `<div class="grid grid-cols-4 gap-1">${Object.keys(FX_PRESETS).map(k => `<button class="mini-btn !px-1" data-act="fx:${k}">${FX_LABEL[k]}</button>`).join('')}</div>` +
+      `<div class="grid grid-cols-4 gap-1">${Object.keys(FX_PRESETS).map(k => `<button class="mini-btn !px-1 ${k === 'red' ? '!text-[#ff4d4d]' : ''}" data-act="fx:${k}">${FX_LABEL[k]}</button>`).join('')}</div>` +
+      (f.duo ? C.color('fx_duo', 'デュオトーンの色（影と光は自動）', f.duo === 'team' ? S.team.primary : f.duo) : '') +
       `<button class="mini-btn" data-act="toCraft"><i class="fa-solid fa-camera-retro mr-1 text-accent"></i>PhotoCraftで本格編集</button>`) +
     C.sec('fa-sun', '色調補正',
       C.range('fx_b', '明るさ', -0.6, 0.6, 0.01, f.b || 0) + C.range('fx_c', 'コントラスト', -0.6, 0.6, 0.01, f.c || 0) + C.range('fx_s', '彩度', -1, 1, 0.01, f.s || 0)) +
@@ -3050,7 +3139,7 @@ function setProp(k, v) {
       if (k.startsWith('fx_')) {
         const key = k.slice(3); o.fx = Object.assign({}, o.fx);
         const had = !!o.fx.recolor;
-        o.fx[key] = (key === 'gray' || key === 'sepia' || key === 'tintColor' || key === 'recolor') ? v : +v;
+        o.fx[key] = (key === 'gray' || key === 'sepia' || key === 'tintColor' || key === 'recolor' || key === 'duo') ? v : +v;
         applyFx(o);
         if (key === 'recolor' && !had) renderProps(); // shows the reset button once
       }
@@ -3109,6 +3198,7 @@ function propAction(act) {
     }
   }
   o.setCoords && o.setCoords();
+  scheduleClips();
   canvas.requestRenderAll(); markDirty(o); saveHistory();
   if (o.gradFill && ['italic', 'under'].includes(a)) applyGradFill(o);
   if (['italic', 'under', 'align', 'bg', 'group', 'ungroup'].includes(a)) renderProps();
@@ -5863,7 +5953,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); objOp('del'); return; }
   const step = e.shiftKey ? 10 : 1;
   const mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
-  if (mv && !o.locked) { e.preventDefault(); o.set({ left: o.left + mv[0], top: o.top + mv[1] }); o.setCoords(); canvas.requestRenderAll(); markDirty(o); saveHistory(); }
+  if (mv && !o.locked) { e.preventDefault(); o.set({ left: o.left + mv[0], top: o.top + mv[1] }); o.setCoords(); scheduleClips(); canvas.requestRenderAll(); markDirty(o); saveHistory(); }
 });
 
 /* ==========================================================
