@@ -2764,6 +2764,7 @@ async function rebuildFromImage(file) {
     const ctx = work.getContext('2d'), img = ctx.getImageData(0, 0, W, H), data = img.data;
     let mask = new Uint8Array(W * H);
     const els = (res.elements || []).filter(e => e.w > 1 && e.h > 1);
+    if (!els.length) throw new Error('文字や図形の位置を読み取れませんでした（' + JSON.stringify((res.elements || []).slice(0, 2)).slice(0, 200) + '）');
     els.forEach(el => {
       const r = elementMask(el, data, W, H, k, mask);
       // an upright element takes the box its pixels really fill (the analysis box is approximate)

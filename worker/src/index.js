@@ -188,8 +188,17 @@ function fromBox2d(d, W, H) {
     let w = bw, h = bh;
     if (Math.abs(det) > 0.2) { w = (bw * c - bh * s) / det; h = (bh * c - bw * s) / det; }
     if (!(w > 1) || !(h > 1)) { w = bw; h = bh; }
-    return { ...e, x: cx - w / 2, y: cy - h / 2, w, h };
+    return { ...e, x: cx - w / 2, y: cy - h / 2, w, h, _px: true };
   });
+  // boxes given as x/y/w/h: fractions (0-1) or a 0-1000 scale are turned into pixels
+  const plain = elements.filter(e => !e?._px && Number.isFinite(+e?.w));
+  if (plain.length) {
+    const maxX = Math.max(...plain.map(e => +e.x + +e.w)), maxY = Math.max(...plain.map(e => +e.y + +e.h));
+    let kx = 1, ky = 1;
+    if (maxX <= 1.05 && maxY <= 1.05) { kx = W; ky = H; }
+    else if ((maxX > W * 1.1 || maxY > H * 1.1) && maxX <= 1000 && maxY <= 1000) { kx = W / 1000; ky = H / 1000; }
+    if (kx !== 1) plain.forEach(e => { e.x *= kx; e.w *= kx; e.y *= ky; e.h *= ky; });
+  }
   return { ...(Array.isArray(d) ? {} : d), elements };
 }
 /* fill in what an answer left out, so the page always gets the same shape */
