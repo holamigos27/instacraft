@@ -5758,15 +5758,21 @@ async function cutPersonForPhotoCraft() {
     const cx = c.getContext('2d'); cx.drawImage(im, 0, 0);
     const alpha = new Uint8Array(c.width * c.height);
     if (!(await segmentPerson(c, alpha))) { busy(false); return toast('人物が見つかりませんでした', 'fa-circle-info', 'text-sky'); }
-    const d = cx.getImageData(0, 0, c.width, c.height);
-    for (let i = 0; i < alpha.length; i++) d.data[i * 4 + 3] = alpha[i];
-    cx.putImageData(d, 0, 0);
-    const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+    // the photo as it is, with the cut as its layer mask: in PhotoCraft white on the mask brings parts back, black takes them away
+    const w = c.width, h = c.height, m = document.createElement('canvas'); m.width = w; m.height = h;
+    const mx = m.getContext('2d'), md = mx.createImageData(w, h);
+    for (let i = 0; i < alpha.length; i++) { md.data[i * 4] = md.data[i * 4 + 1] = md.data[i * 4 + 2] = alpha[i]; md.data[i * 4 + 3] = 255; }
+    mx.putImageData(md, 0, 0);
+    const comp = document.createElement('canvas'); comp.width = w; comp.height = h;
+    const kx = comp.getContext('2d'); kx.drawImage(c, 0, 0);
+    const d = kx.getImageData(0, 0, w, h); for (let i = 0; i < alpha.length; i++) d.data[i * 4 + 3] = alpha[i]; kx.putImageData(d, 0, 0);
+    const agPsd = await loadAgPsd(), base = f.name.replace(/\.[^.]+$/, '');
+    const buf = agPsd.writePsd({ width: w, height: h, canvas: comp, children: [{ name: base + '_切り抜き', left: 0, top: 0, canvas: c, mask: { top: 0, left: 0, bottom: h, right: w, defaultColor: 0, canvas: m } }] });
     await ensureCraft('photocraft');
     const win = frameOf('photocraft').contentWindow;
-    dropIntoPhotoCraft(win, new win.File([blob], f.name.replace(/\.[^.]+$/, '') + '_切り抜き.png', { type: 'image/png' }));
+    dropIntoPhotoCraft(win, new win.File([buf], base + '_切り抜き.psd', { type: 'image/vnd.adobe.photoshop' }));
     busy(false);
-    toast('人物を切り抜いてPhotoCraftで開きました', 'fa-user', 'text-accent', 4000);
+    toast('人物を切り抜いてPhotoCraftで開きました。レイヤーのマスク（右側のサムネイル）を選び、白で塗ると戻り、黒で塗ると消えます', 'fa-user', 'text-accent', 7000);
   } catch (e) { busy(false); toast('切り抜けませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 5000); }
 }
 async function pullFromVectorCraft() {
