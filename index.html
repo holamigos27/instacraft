@@ -6879,7 +6879,12 @@ async function route() {
   if (m) {
     const kind = m[1], id = m[2];
     if (CUR.post?.id !== id || CUR.kind !== kind) { if (CUR.post) await savePostNow(); await openDoc(kind, id); }
-  } else await closePost({ '#/presets': 'presets', '#/assets': 'assets', '#/masters': 'masters' }[location.hash] || 'posts');
+  } else {
+    // the floating edit window and a running brush belong to the editor
+    try { stopBrush(true); } catch (e) { /* not set up yet */ }
+    floatProps(false);
+    await closePost({ '#/presets': 'presets', '#/assets': 'assets', '#/masters': 'masters' }[location.hash] || 'posts');
+  }
 }
 window.addEventListener('hashchange', route);
 $('#btnBack').addEventListener('click', () => { location.hash = CUR.kind === 'preset' ? '#/presets' : ''; });
