@@ -113,7 +113,7 @@ const DESIGN_PROMPT = `This is a social-media graphic ({W}×{H} px). It will be 
 
 List, back to front:
 - every piece of designed text (titles, scores, names, dates, captions, small credits). One element per line of text. Where one line mixes styles (a small grey shirt number before a big name, a coloured word in a white title), make each differently styled piece its own element. A paragraph of small body text in one style may stay one element with \n between its lines. Copy the text exactly, including Japanese.
-- images: every emblem, crest, logo, icon, star, badge, sponsor logo, and the main person or subject of the photo. kind "image", with a segmentation mask of it (see mask). Each logo or icon is its own element (three stars = three elements).
+- images: every emblem, crest, logo, icon, star, badge, sponsor logo, and the main person or subject of the photo. kind "image". Each logo or icon is its own element (three stars = three elements).
 - flat graphic shapes drawn over the picture: solid or gradient bands, boxes, frames, rules, slanted stripes - only when nothing else is printed inside them other than texts you list. A band carrying logos is not a shape (its logos are images, the band stays in the picture). A slanted band is a rect with its rotation.
 Leave out anything that is part of the photographed scene (printing on clothes, signs) and soft lighting (glows, flares, vignettes) - those stay in the picture.
 
@@ -125,14 +125,14 @@ For each element:
 - shadow: drop shadow or glow (glow = offsets 0, a large blur), colour as #rrggbb or rgba(), blur and offsets in pixels, or null.
 - opacity 0–1; corner_radius in pixels for rounded boxes (0 otherwise).
 For shapes and images, text/font/weight are null, italic false, align "center", letter_spacing 0, line_height 1; images have fill type "none".
-mask (images only, else null): the segmentation mask of the object inside its box, as a base64 PNG (a probability map, 0-255).
+mask: always null.
 name: a short Japanese label for the layer (例: タイトル, スコア, 日付, 帯).
 background: a short description and its main colour.`;
 
 /* Gemini has no strict schema here: the shape is spelled out, and the answer is tidied by normalizeDesign */
 const GEMINI_SHAPE = `Answer with JSON only, in this shape:
 {"background":{"description":string,"color":"#rrggbb"},
- "elements":[{"kind":"text"|"image"|"rect"|"ellipse"|"triangle"|"line","name":string,"box_2d":[ymin,xmin,ymax,xmax],"rotation":number,"mask":string|null,
+ "elements":[{"kind":"text"|"image"|"rect"|"ellipse"|"triangle"|"line","name":string,"box_2d":[ymin,xmin,ymax,xmax],"rotation":number,
    "text":string|null,"font":one of ${JSON.stringify(DESIGN_FONTS)} or null,"weight":400|500|700|800|900|null,"italic":boolean,"align":"left"|"center"|"right",
    "letter_spacing":number,"line_height":number,"fill":{"type":"solid"|"gradient"|"none","color":"#rrggbb","color2":"#rrggbb"|null,"angle":number},
    "stroke":{"color":string,"width":number}|null,"shadow":{"color":string,"blur":number,"offset_x":number,"offset_y":number}|null,"opacity":number,"corner_radius":number}]}
@@ -146,7 +146,6 @@ const GEMINI_SCHEMA = gO({
   background: gO({ description: gS('STRING'), color: gS('STRING') }),
   elements: gS('ARRAY', { items: gO({
     kind: gS('STRING', { enum: ['text', 'image', 'rect', 'ellipse', 'triangle', 'line'] }),
-    mask: gN('STRING'),
     name: gS('STRING'),
     box_2d: gS('ARRAY', { items: gS('NUMBER') }),
     rotation: gS('NUMBER'),
@@ -202,6 +201,36 @@ async function geminiDesign(env, mime, b64, W, H) {
     }
   }
   throw new Error('使えるGeminiのモデルがありません（' + last + '）');
+}
+/* the big subjects (the player…) get a cut-out mask from a second, short request; on a timeout or
+   any failure they are keyed out on the page instead */
+const iou = (a, b) => {
+  const x0 = Math.max(a[1], b[1]), y0 = Math.max(a[0], b[0]), x1 = Math.min(a[3], b[3]), y1 = Math.min(a[2], b[2]);
+  const i = Math.max(0, x1 - x0) * Math.max(0, y1 - y0), u = (a[3] - a[1]) * (a[2] - a[0]) + (b[3] - b[1]) * (b[2] - b[0]) - i;
+  return u > 0 ? i / u : 0;
+};
+async function geminiMasks(env, mime, b64, raw) {
+  const list = (raw?.elements || []).filter(e => e?.kind === 'image' && Array.isArray(e.box_2d) && (e.box_2d[2] - e.box_2d[0]) * (e.box_2d[3] - e.box_2d[1]) > 60000);
+  if (!list.length) return;
+  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: 'POST', signal: AbortSignal.timeout(70000),
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: 'Give the segmentation masks for the main person or people (and any other large photographed subject) in this graphic. Output a JSON list of segmentation masks where each entry contains the 2D bounding box in the key "box_2d", the segmentation mask in key "mask", and the text label in the key "label". Use descriptive labels.' }] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.2, thinkingConfig: { thinkingBudget: 0 } },
+      }),
+    });
+    if (!r.ok) return;
+    const j = await r.json(), text = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join('');
+    const got = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+    for (const e of list) {
+      const best = (Array.isArray(got) ? got : []).filter(g => Array.isArray(g?.box_2d) && typeof g.mask === 'string')
+        .map(g => [g, iou(e.box_2d, g.box_2d)]).sort((a, b) => b[1] - a[1])[0];
+      if (best && best[1] > 0.3) { e.box_2d = best[0].box_2d; e.mask = best[0].mask; } // the mask belongs to its own box
+    }
+  } catch (e) { /* timed out or unreadable: keyed out on the page */ }
 }
 /* Gemini's own boxes ([ymin, xmin, ymax, xmax] in 0-1000, as drawn) → x, y, w, h in pixels before rotation */
 function fromBox2d(d, W, H) {
@@ -352,7 +381,9 @@ const actions = {
     const W = Math.round(+p.width) || 0, H = Math.round(+p.height) || 0;
     // Gemini (free tier) when its key is registered, otherwise Claude
     if (env.GEMINI_API_KEY) {
-      const raw = await geminiDesign(env, m[1], m[2], W, H), d = normalizeDesign(fromBox2d(raw, W, H));
+      const raw = await geminiDesign(env, m[1], m[2], W, H);
+      await geminiMasks(env, m[1], m[2], raw);
+      const d = normalizeDesign(fromBox2d(raw, W, H));
       if (!d.elements.some(e => e.w > 1 && e.h > 1)) throw new Error('解析結果を読み取れませんでした（返答：' + JSON.stringify(raw).slice(0, 300) + '）');
       return d;
     }

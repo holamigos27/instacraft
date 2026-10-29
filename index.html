@@ -2810,7 +2810,11 @@ async function rebuildFromImage(file) {
     const scaled = (max, type, q) => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); return { c, url: type ? c.toDataURL(type, q) : null }; };
     const look = scaled(1568, 'image/jpeg', 0.9);
     busy(true, 'AIがデザインを解析しています…（30秒〜1分ほどかかります）');
-    const res = await api('icAnalyzeDesign', { image: look.url, width: look.c.width, height: look.c.height });
+    // never wait for ever: three minutes, then say so
+    const res = await Promise.race([
+      api('icAnalyzeDesign', { image: look.url, width: look.c.width, height: look.c.height }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('解析に時間がかかりすぎました。少し待ってからもう一度お試しください')), 180000)),
+    ]);
     busy(true, '文字を取り除いて、レイヤーを作っています…');
     await fontsReady;
     const work = scaled(2160).c, W = work.width, H = work.height, k = W / look.c.width;
