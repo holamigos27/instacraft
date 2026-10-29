@@ -1218,11 +1218,12 @@ function normalizeImageSizes(c) {
   walk(c.getObjects());
 }
 async function externalizeImages(stateStr) {
-  if (!stateStr || !stateStr.includes('"src":"data:')) return stateStr;
+  if (!stateStr || !(stateStr.includes('"src":"data:') || stateStr.includes('"cutOrig":"data:'))) return stateStr;
   const st = JSON.parse(stateStr);
   const walk = async objs => {
     for (const o of objs || []) {
       if (o.type === 'image' && typeof o.src === 'string' && o.src.startsWith('data:')) { o.src = await uploadImage(o.src); o.crossOrigin = 'anonymous'; }
+      if (typeof o.cutOrig === 'string' && o.cutOrig.startsWith('data:')) o.cutOrig = await uploadImage(o.cutOrig);
       if (o.objects) await walk(o.objects);
     }
   };
@@ -1307,7 +1308,7 @@ const RATIOS = { '1:1': [1080, 1080], '4:5': [1080, 1350], '9:16': [1080, 1920] 
 const MAX_SLIDES = 10;
 const PROPS = ['name', 'role', 'fx', 'fullBleed', 'filled', 'locked', 'selectable', 'evented', 'hasControls',
   'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'perPixelTargetFind', 'splitByGrapheme',
-  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind', 'scorerBox', 'noWrap', 'fitBase', 'pkLine', 'gradFill', 'cid', 'clipTo'];
+  'tpl', 'fromPreset', 'slotId', 'slotFor', 'slotGhost', 'slotPrimary', 'slotPad', 'inSlot', 'slotKind', 'scorerBox', 'noWrap', 'fitBase', 'pkLine', 'gradFill', 'cid', 'clipTo', 'cutOrig'];
 const BADGE_COLORS = ['bg-accent/15 text-accent', 'bg-sky/15 text-sky', 'bg-amber-400/15 text-amber-300', 'bg-violet-400/15 text-violet-300', 'bg-hot/15 text-hot', 'bg-emerald-400/15 text-emerald-300', 'bg-orange-400/15 text-orange-300', 'bg-pink-400/15 text-pink-300'];
 const INFO_DEFAULT = { competition: '2026 AUTUMN LEAGUE 第5節', opponent: 'RED HAWKS', date: '2026.11.03', time: '13:00', venue: '市民総合グラウンド', scoreUs: '3', scoreThem: '1', sponsor: '株式会社〇〇〇〇', scorers: "Raise Nakagawa 1'\nEito Watanabe 4'\nTsukasa Nishikawa 12'" };
 /* post-info fields; the user can add their own (key c_…). Labels double as {placeholder} names. */
@@ -1593,6 +1594,7 @@ function loadSnapshot(str) {
   return new Promise(res => {
     const st = JSON.parse(str);
     HIST.lock = true;
+    try { stopBrush(true); } catch (e) { /* not set up yet */ }
     canvas.discardActiveObject();
     S.ratio = st.ratio; [S.W, S.H] = RATIOS[st.ratio]; S.bg = st.bg; S.lastPreset = st.lastPreset || null; S.dirty = !!st.dirty;
     markRatioUI();
@@ -2735,37 +2737,97 @@ function personSegmenter() {
   })().catch(e => { SEGMENTER = null; throw e; });
   return SEGMENTER;
 }
+/* the person in a picture as an alpha map. The model sees 256 px, so the picture is also looked at in
+   overlapping tiles (an outstretched arm is then big enough to be seen) and what the tiles agree on is added;
+   gaps inside the body (a printed number the model doubts) are filled. */
+async function segmentPerson(c, alpha) {
+  const w = c.width, h = c.height, seg = await personSegmenter(), sum = new Float32Array(w * h), cnt = new Uint8Array(w * h);
+  let prob = sum;
+  const run = (sx, sy, sw, sh) => {
+    const t = document.createElement('canvas'); t.width = Math.round(sw); t.height = Math.round(sh);
+    t.getContext('2d').drawImage(c, sx, sy, sw, sh, 0, 0, t.width, t.height);
+    const out = seg.segment(t), bgm = out.confidenceMasks?.[0];
+    if (bgm) {
+      const f = bgm.getAsFloat32Array(), mw = bgm.width, mh = bgm.height;
+      for (let y = 0; y < t.height; y++) for (let x = 0; x < t.width; x++) {
+        const gx = Math.round(sx + x), gy = Math.round(sy + y); if (gx >= w || gy >= h) continue;
+        const p = 1 - f[Math.min(mh - 1, (y * mh / t.height) | 0) * mw + Math.min(mw - 1, (x * mw / t.width) | 0)];
+        sum[gy * w + gx] += p; cnt[gy * w + gx]++;
+      }
+    }
+    out.close?.();
+  };
+  run(0, 0, w, h);
+  const whole = Float32Array.from(sum); sum.fill(0); cnt.fill(0);
+  // 3 × 3 tiles, each half the picture, so every part is seen at about twice the detail
+  const tw = w * 0.5, th = h * 0.5;
+  for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) { run(i * (w - tw) / 2, j * (h - th) / 2, tw, th); await sleep(0); }
+  // a part the tiles agree on (their average) counts if its colour is more the person's than the background's
+  // (colours as the whole-picture answer sees them); one tile's guess alone does not
+  const px = c.getContext('2d').getImageData(0, 0, w, h).data, fgH = new Float32Array(4096), bgH = new Float32Array(4096);
+  const bin = i => (px[i * 4] >> 4) << 8 | (px[i * 4 + 1] >> 4) << 4 | px[i * 4 + 2] >> 4;
+  let fN = 0, bN = 0;
+  for (let i = 0; i < w * h; i++) { if (whole[i] > 0.8) { fgH[bin(i)]++; fN++; } else if (whole[i] < 0.2) { bgH[bin(i)]++; bN++; } }
+  prob = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const t = cnt[i] ? sum[i] / cnt[i] : 0, b = bin(i);
+    prob[i] = t > whole[i] && fN && (fgH[b] + 0.5) / fN > 2 * (bgH[b] + 0.5) / (bN || 1) ? t : whole[i];
+  }
+  // background is what is reachable from the border through clearly-not-person pixels; the rest is the person
+  const outside = new Uint8Array(w * h), q = [];
+  const push = i => { if (!outside[i] && prob[i] < 0.5) { outside[i] = 1; q.push(i); } };
+  for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+  while (q.length) { const i = q.pop(), x = i % w; if (x) push(i - 1); if (x < w - 1) push(i + 1); if (i >= w) push(i - w); if (i + w < w * h) push(i + w); }
+  for (let i = 0; i < w * h; i++) alpha[i] = outside[i] ? Math.max(0, Math.min(1, (prob[i] - 0.3) / 0.4)) * 255 : 255;
+  // pieces not joined to the body (a letter of the title, specks) are dropped
+  const lab = new Int32Array(w * h), sizes = [0];
+  for (let s0 = 0; s0 < w * h; s0++) {
+    if (alpha[s0] <= 127 || lab[s0]) continue;
+    const id = sizes.length, st = [s0]; lab[s0] = id; let n = 0;
+    while (st.length) {
+      const i = st.pop(), x = i % w; n++;
+      for (const j of [x ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) if (j >= 0 && j < w * h && !lab[j] && alpha[j] > 127) { lab[j] = id; st.push(j); }
+    }
+    sizes.push(n);
+  }
+  const top = Math.max(0, ...sizes);
+  let on = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (alpha[i] > 127 && sizes[lab[i]] < top * 0.15) alpha[i] = 0;
+    else if (alpha[i] <= 127 && alpha[i] > 0) {
+      // a soft edge belongs to a kept piece only when one is right next to it
+      const x = i % w, nb = [x ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w].some(j => j >= 0 && j < w * h && lab[j] && sizes[lab[j]] >= top * 0.15);
+      if (!nb) alpha[i] = 0;
+    }
+    if (alpha[i] > 127) on++;
+  }
+  return on > w * h * 0.05;
+}
 /* an emblem, logo or person cut out of the picture: by its mask, or else by keying out the colour round its edge */
 async function cutOut(el, src, W, H, k) {
-  const x0 = Math.max(0, Math.floor(el.x * k)), y0 = Math.max(0, Math.floor(el.y * k));
-  const w = Math.min(W - x0, Math.ceil(el.w * k)), h = Math.min(H - y0, Math.ceil(el.h * k));
+  const person = el.w * el.h * k * k > W * H * 0.06 || /人|選手|person|player|man|woman|athlete/i.test(el.name || '');
+  const px = person ? el.w * 0.3 : 0, py = person ? el.h * 0.12 : 0;
+  const x0 = Math.max(0, Math.floor((el.x - px) * k)), y0 = Math.max(0, Math.floor((el.y - py) * k));
+  const w = Math.min(W, Math.ceil((el.x + el.w + px) * k)) - x0, h = Math.min(H, Math.ceil((el.y + el.h + py) * k)) - y0;
   if (w < 2 || h < 2) return null;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const cx = c.getContext('2d'); cx.drawImage(src, x0, y0, w, h, 0, 0, w, h);
+  // the picture as it was, kept with the layer so a brush can bring parts back
+  const orig = document.createElement('canvas'); orig.width = w; orig.height = h; orig.getContext('2d').drawImage(c, 0, 0);
   const im = cx.getImageData(0, 0, w, h), d = im.data, alpha = new Uint8Array(w * h);
   let ok = false;
   // a person: cut out by a person-segmentation model running in the page (free, no upload)
-  if (el.w * el.h * k * k > W * H * 0.06 || /人|選手|person|player|man|woman|athlete/i.test(el.name || '')) {
+  if (person) {
     try {
-      const seg = await personSegmenter(), out = seg.segment(c), bgm = out.confidenceMasks?.[0];
-      if (bgm) {
-        const f = bgm.getAsFloat32Array(), mw = bgm.width, mh = bgm.height;
-        let on = 0;
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-          const p = 1 - f[Math.min(mh - 1, (y * mh / h) | 0) * mw + Math.min(mw - 1, (x * mw / w) | 0)];
-          const a = Math.max(0, Math.min(1, (p - 0.3) / 0.4)) * 255;
-          alpha[y * w + x] = a; if (a > 127) on++;
-        }
-        ok = on > w * h * 0.08;
-      }
-      out.close?.();
+      ok = await segmentPerson(c, alpha);
     } catch (e) { console.warn('person segmentation', e); }
   }
   if (!ok && el.mask) {
     try {
       const mi = await loadImg(el.mask.startsWith('data:') ? el.mask : 'data:image/png;base64,' + el.mask);
       const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
-      const mx = mc.getContext('2d'); mx.drawImage(mi, 0, 0, w, h);
+      const mx = mc.getContext('2d'); mx.drawImage(mi, el.x * k - x0, el.y * k - y0, el.w * k, el.h * k); // the mask covers the analysis box
       const md = mx.getImageData(0, 0, w, h).data;
       let on = 0;
       for (let i = 0; i < w * h; i++) { alpha[i] = md[i * 4] * (md[i * 4 + 3] / 255); if (alpha[i] > 127) on++; }
@@ -2789,7 +2851,7 @@ async function cutOut(el, src, W, H, k) {
   }
   for (let i = 0; i < w * h; i++) d[i * 4 + 3] = alpha[i];
   cx.putImageData(im, 0, 0);
-  return { canvas: c, x0, y0, w, h, alpha };
+  return { canvas: c, x0, y0, w, h, alpha, orig, person: person && ok };
 }
 function dilate(mask, W, H, r) {
   if (r < 1) return mask;
@@ -3145,8 +3207,20 @@ async function rebuildFromImage(file) {
       if (x1 >= 0) dilateAround(mask, W, H, [x0, y0, x1, y1], Math.max(2, Math.round(W / 300)));
     }
     els = els.filter(e => e.kind !== 'image' || cuts.has(e));
+    const onPerson = new Uint8Array(W * H);
+    cuts.forEach(cut => { if (cut.person) for (let y = 0; y < cut.h; y++) for (let x = 0; x < cut.w; x++) if (cut.alpha[y * cut.w + x] > 127) onPerson[(cut.y0 + y) * W + cut.x0 + x] = 1; });
+    const coveredByPerson = el => {
+      let n = 0, on = 0;
+      for (let j = 0; j < 12; j++) for (let i = 0; i < 12; i++) {
+        const x = Math.round((el.x + el.w * (i + 0.5) / 12) * k), y = Math.round((el.y + el.h * (j + 0.5) / 12) * k);
+        if (x < 0 || y < 0 || x >= W || y >= H) continue; n++; if (onPerson[y * W + x]) on++;
+      }
+      return n && on / n > 0.5;
+    };
     els.forEach(el => {
       if (el.kind === 'image') return;
+      // a number or a sponsor printed on the shirt stays on the shirt
+      if (coveredByPerson(el)) { el.skip = true; return; }
       const r = elementMask(el, data, W, H, k, mask);
       // a "band" with other things printed on it stays in the picture (its logos come out as images)
       if (el.kind !== 'text' && (!r || r.n < r.area * 0.7 || r.other > 0.01)) { el.skip = true; return; }
@@ -3190,7 +3264,7 @@ async function rebuildFromImage(file) {
       const cut = cuts.get(el);
       if (!cut) { layers.push(elementLayer(el, t)); continue; }
       const pic = await loadImg(cut.canvas.toDataURL('image/png'));
-      layers.push(new fabric.Image(pic, { originX: 'left', originY: 'top', left: ox + cut.x0 * sc, top: oy + cut.y0 * sc, scaleX: sc, scaleY: sc, name: el.name || '画像' }));
+      layers.push(new fabric.Image(pic, { originX: 'left', originY: 'top', left: ox + cut.x0 * sc, top: oy + cut.y0 * sc, scaleX: sc, scaleY: sc, name: el.name || '画像', cutOrig: cut.orig.toDataURL('image/jpeg', 0.88) }));
     }
     replaceSlideObjects([bg, ...layers]);
     canvas.getObjects().forEach(o => { if (o.type === 'textbox') o.initDimensions(); });
@@ -3317,6 +3391,119 @@ canvas.findTarget = function (e, skipGroup) {
   } finally { off.forEach(([o, ev]) => { o.evented = ev; }); }
   return t;
 };
+/* ---------------- brushes on an image: fill from around, erase, bring back the uncut picture ---------------- */
+const BRUSH = { mode: null, img: null, size: 40, pts: null, keep: null };
+function toggleBrush(mode, img) {
+  if (BRUSH.mode === mode && BRUSH.img === img) return stopBrush();
+  stopBrush(true);
+  BRUSH.mode = mode; BRUSH.img = img;
+  BRUSH.keep = { lockMovementX: img.lockMovementX, lockMovementY: img.lockMovementY, hasControls: img.hasControls };
+  img.set({ lockMovementX: true, lockMovementY: true, hasControls: false });
+  canvas.setActiveObject(img);
+  canvas.defaultCursor = canvas.hoverCursor = canvas.moveCursor = 'crosshair';
+  canvas.requestRenderAll(); renderProps();
+  toast({ heal: '消したい所をなぞると、周りの模様で埋めます', erase: 'なぞった所を透明にします', restore: 'なぞった所を元の写真から戻します' }[mode] + '（Escで終了）', 'fa-paintbrush', 'text-accent', 3500);
+}
+function stopBrush(quiet) {
+  if (!BRUSH.mode) return;
+  const img = BRUSH.img;
+  if (img && BRUSH.keep) img.set(BRUSH.keep);
+  BRUSH.mode = null; BRUSH.img = null; BRUSH.pts = null; BRUSH.keep = null;
+  canvas.defaultCursor = 'default'; canvas.hoverCursor = 'move'; canvas.moveCursor = 'move';
+  canvas.clearContext(canvas.contextTop); canvas.requestRenderAll();
+  if (!quiet) renderProps();
+}
+// while brushing every click lands on the image being painted
+const findTargetBrush = canvas.findTarget;
+canvas.findTarget = function (e, skipGroup) { return BRUSH.mode && BRUSH.img ? BRUSH.img : findTargetBrush.call(this, e, skipGroup); };
+function drawBrush(pt) {
+  const ctx = canvas.contextTop, v = canvas.viewportTransform, rs = canvas.getRetinaScaling();
+  canvas.clearContext(ctx);
+  ctx.save(); ctx.setTransform(v[0] * rs, v[1] * rs, v[2] * rs, v[3] * rs, v[4] * rs, v[5] * rs);
+  ctx.lineCap = ctx.lineJoin = 'round';
+  if (BRUSH.pts?.length) {
+    ctx.strokeStyle = BRUSH.mode === 'restore' ? 'rgba(80,200,255,.5)' : 'rgba(255,60,110,.5)'; ctx.lineWidth = BRUSH.size;
+    ctx.beginPath(); BRUSH.pts.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); if (BRUSH.pts.length === 1) ctx.lineTo(pt.x + 0.01, pt.y); ctx.stroke();
+  }
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 / v[0]; ctx.beginPath(); ctx.arc(pt.x, pt.y, BRUSH.size / 2, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+canvas.on('mouse:down', e => { if (!BRUSH.mode) return; BRUSH.pts = [canvas.getPointer(e.e)]; drawBrush(BRUSH.pts[0]); });
+canvas.on('mouse:move', e => {
+  if (!BRUSH.mode) return;
+  const pt = canvas.getPointer(e.e);
+  if (BRUSH.pts) BRUSH.pts.push(pt);
+  drawBrush(pt);
+});
+canvas.on('mouse:up', e => {
+  if (!BRUSH.mode || !BRUSH.pts) return;
+  const pts = BRUSH.pts; BRUSH.pts = null;
+  canvas.clearContext(canvas.contextTop);
+  applyBrush(BRUSH.img, BRUSH.mode, pts, BRUSH.size).catch(err => { busy(false); toast('修正できませんでした：' + err.message, 'fa-triangle-exclamation', 'text-hot', 5000); });
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && BRUSH.mode) stopBrush(); });
+async function applyBrush(img, mode, pts, size) {
+  const el = img._originalElement || img.getElement(), nw = el.naturalWidth || el.width, nh = el.naturalHeight || el.height;
+  const fx = nw / img.width, fy = nh / img.height;
+  const inv = fabric.util.invertTransform(img.calcTransformMatrix()), m = img.calcTransformMatrix();
+  const scale = Math.hypot(m[0], m[1]) || 1;
+  // the stroke in the image's own pixels
+  const ip = pts.map(q => { const l = fabric.util.transformPoint(new fabric.Point(q.x, q.y), inv); return { x: (l.x + img.width / 2 + (img.cropX || 0)) * fx, y: (l.y + img.height / 2 + (img.cropY || 0)) * fy }; });
+  const rad = size / 2 / scale * fx;
+  const sm = document.createElement('canvas'); sm.width = nw; sm.height = nh;
+  const sx = sm.getContext('2d'); sx.strokeStyle = sx.fillStyle = '#fff'; sx.lineCap = sx.lineJoin = 'round'; sx.lineWidth = rad * 2;
+  sx.beginPath(); ip.forEach((q, i) => i ? sx.lineTo(q.x, q.y) : sx.moveTo(q.x, q.y)); if (ip.length === 1) sx.lineTo(ip[0].x + 0.01, ip[0].y); sx.stroke();
+  const md = sx.getImageData(0, 0, nw, nh).data;
+  let bx0 = nw, by0 = nh, bx1 = -1, by1 = -1;
+  for (let y = 0; y < nh; y++) for (let x = 0; x < nw; x++) if (md[(y * nw + x) * 4 + 3] > 20) { if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y; }
+  if (bx1 < 0) return toast('画像の上をなぞってください', 'fa-circle-info', 'text-sky');
+  const work = document.createElement('canvas'); work.width = nw; work.height = nh;
+  const wx = work.getContext('2d'); wx.drawImage(el, 0, 0, nw, nh);
+  if (mode === 'heal') {
+    busy(true, '周りの模様から埋めています…');
+    await sleep(30);
+    // only the neighbourhood of the stroke is worked on, at full detail
+    const pad = Math.max(120, Math.max(bx1 - bx0, by1 - by0) * 1.5);
+    const X0 = Math.max(0, Math.floor(bx0 - pad)), Y0 = Math.max(0, Math.floor(by0 - pad)), X1 = Math.min(nw, Math.ceil(bx1 + pad + 1)), Y1 = Math.min(nh, Math.ceil(by1 + pad + 1)), cw = X1 - X0, ch = Y1 - Y0;
+    const part = document.createElement('canvas'); part.width = cw; part.height = ch;
+    const px = part.getContext('2d'); px.drawImage(work, X0, Y0, cw, ch, 0, 0, cw, ch);
+    const before = px.getImageData(0, 0, cw, ch);
+    const mask = new Uint8Array(cw * ch);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (md[((Y0 + y) * nw + X0 + x) * 4 + 3] > 20) mask[y * cw + x] = 1;
+    const [thin, thick] = splitHoles(mask, cw, ch, Math.round(Math.max(cw, ch) * 0.02));
+    await contentAwareFill(part, thin, { fine: true, avoid: mask });
+    await contentAwareFill(part, thick);
+    // the alpha stays as it was (a cut-out keeps its outline)
+    const after = px.getImageData(0, 0, cw, ch);
+    for (let i = 0; i < cw * ch; i++) after.data[i * 4 + 3] = before.data[i * 4 + 3];
+    px.putImageData(after, 0, 0);
+    wx.clearRect(X0, Y0, cw, ch); wx.drawImage(part, X0, Y0);
+  } else {
+    const wd = wx.getImageData(0, 0, nw, nh), d = wd.data;
+    let od = null;
+    if (mode === 'restore') {
+      if (!img.cutOrig) return;
+      const oi = await loadImg(img.cutOrig).catch(() => null);
+      if (!oi) return toast('元の写真を読み込めませんでした', 'fa-triangle-exclamation', 'text-hot');
+      const oc = document.createElement('canvas'); oc.width = nw; oc.height = nh; const ox = oc.getContext('2d'); ox.drawImage(oi, 0, 0, nw, nh);
+      od = ox.getImageData(0, 0, nw, nh).data;
+    }
+    for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
+      const i = (y * nw + x) * 4, a = md[i + 3] / 255; if (!a) continue;
+      if (mode === 'erase') d[i + 3] = d[i + 3] * (1 - a);
+      else { for (let c = 0; c < 3; c++) d[i + c] = d[i + c] * (1 - a) + od[i + c] * a; d[i + 3] = Math.max(d[i + 3], 255 * a); }
+    }
+    wx.putImageData(wd, 0, 0);
+  }
+  const opaque = !img.cutOrig && !wx.getImageData(0, 0, nw, nh).data.some((v, i) => i % 4 === 3 && v < 255);
+  const pic = await loadImg(work.toDataURL(opaque ? 'image/jpeg' : 'image/png', 0.92));
+  const keep = { width: img.width, height: img.height, scaleX: img.scaleX, scaleY: img.scaleY, cropX: img.cropX, cropY: img.cropY };
+  img.setElement(pic); img.set(keep);
+  if (img.filters?.length) img.applyFilters();
+  img.dirty = true; img.setCoords();
+  busy(false);
+  canvas.requestRenderAll(); scheduleClips(); S.dirty = true; saveHistory();
+}
 canvas.on('mouse:dblclick', e => {
   const base = e.target; if (!base || base.clipTo) return;
   const fl = clipFollowers(base).filter(o => o.visible !== false && !o.locked); if (!fl.length) return;
@@ -3606,6 +3793,12 @@ function imagePropsHTML(o) {
   return C.sec('fa-shield-halved', slot ? `${esc((slot.name || '枠').replace(/の枠$/, ''))}を差し替え` : '画像を差し替え',
       (photo ? '<p class="text-[10px] text-slate-500">写真はドラッグで枠の中の位置を、四隅で大きさを調整できます。</p>' : assetSelectHTML('data-asset-pick', slot ? slotKindOf(slot) : 'emblem', '登録済みのエンブレム・ロゴ・スポンサーから選ぶ…')) +
       C.btns([['replaceFile', '<i class="fa-solid fa-upload mr-1"></i>ファイルから差し替え']])) +
+    C.sec('fa-paintbrush', 'ブラシで修正',
+      `<div class="grid grid-cols-3 gap-1">${[['heal', 'fa-wand-magic-sparkles', '周りから埋める'], ['erase', 'fa-eraser', '消す'], ['restore', 'fa-rotate-left', '元に戻す']]
+        .filter(([m]) => m !== 'restore' || o.cutOrig)
+        .map(([m, ic, l]) => `<button class="mini-btn !px-1 ${BRUSH.mode === m && BRUSH.img === o ? '!bg-accent !text-black' : ''}" data-act="brush:${m}"><i class="fa-solid ${ic} mr-1"></i>${l}</button>`).join('')}</div>` +
+      `<label class="ctl"><span class="ctl-l">ブラシの太さ<b data-brush-out>${BRUSH.size}px</b></span><input type="range" data-brush-size min="4" max="300" step="1" value="${BRUSH.size}"></label>` +
+      `<p class="text-[10px] text-slate-500 leading-relaxed">ボタンを押してから、画像の上をなぞります。「周りから埋める」は消し残しや不要な物を周りの模様で埋め、「消す」は透明に${o.cutOrig ? '、「元に戻す」は切り抜きで消えた部分を元の写真から戻します' : 'します'}。Esc か同じボタンで終了。</p>`) +
     C.sec('fa-palette', 'ロゴ・画像の色を変える',
       C.color('fx_recolor', f.recolor ? '色（透明部分はそのまま）' : '色を選ぶと全体がその色になります', f.recolor || '#ffffff') +
       (f.recolor ? C.btns([['recolorOff', '<i class="fa-solid fa-rotate-left mr-1"></i>元の色に戻す']]) : '')) +
@@ -3741,6 +3934,7 @@ function propAction(act) {
   const [a, v] = act.split(':');
   if (a === 'qa') { if (v === 'upload') $('#fileInput').click(); if (v === 'text') addObj(TEXTS.heading()); if (v === 'preview') openPreview(); return; }
   if (a === 'toCraft') { setCenterTab('photocraft', { send: true }); return; }
+  if (a === 'brush') { if (o && o.type === 'image') toggleBrush(v, o); return; }
   if (!o) return;
   switch (a) {
     case 'fillmode': {
@@ -3795,6 +3989,10 @@ propsEl.addEventListener('input', e => {
   const k = e.target.dataset.k; if (!k || e.target.tagName === 'SELECT' || e.target.type === 'checkbox') return;
   setProp(k, e.target.value);
   if (e.target.type === 'range') outLabel(k, e.target.value);
+});
+propsEl.addEventListener('input', e => {
+  if (!e.target.matches('[data-brush-size]')) return;
+  BRUSH.size = +e.target.value; const b = propsEl.querySelector('[data-brush-out]'); if (b) b.textContent = BRUSH.size + 'px';
 });
 propsEl.addEventListener('change', e => { if (e.target.matches('[data-size]')) applySize(e.target.dataset.size, +e.target.value); });
 propsEl.addEventListener('keydown', e => {
