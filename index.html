@@ -2765,6 +2765,213 @@ function inpaint(data, mask, W, H) {
   // a little grain so the filled areas don't look smeared flat
   for (let i = 0; i < W * H; i++) if (mask[i]) { const g = (Math.random() - 0.5) * 6; data[i * 4] += g; data[i * 4 + 1] += g; data[i * 4 + 2] += g; }
 }
+/* Content-aware fill (PatchMatch, as in Wexler et al. / Photoshop): the holes are rebuilt from small
+   patches of the rest of the same picture, coarse to fine, so stripes, edges and textures carry on
+   instead of being blurred. Works at up to 900 px; the result is scaled back into the full picture. */
+/* structure first (Criminisi et al.): the hole is filled from its edge inward, the places where a line
+   or an edge runs into it first, each time with the best-matching patch from the known picture, so
+   stripes and edges are carried across the hole. Used on a small copy, as the start for PatchMatch. */
+function structureFill(img, m, w, h, R) {
+  const hole = m.slice(), conf = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) conf[i] = hole[i] ? 0 : 1;
+  const gray = i => img[i * 3] * 0.299 + img[i * 3 + 1] * 0.587 + img[i * 3 + 2] * 0.114;
+  const src = [];
+  for (let y = R; y < h - R; y++) for (let x = R; x < w - R; x++) {
+    let ok = true;
+    for (let oy = -R; oy <= R && ok; oy++) for (let ox = -R; ox <= R; ox++) if (m[(y + oy) * w + x + ox]) { ok = false; break; }
+    if (ok) src.push(y * w + x);
+  }
+  if (!src.length) return;
+  let left = hole.reduce((a, v) => a + v, 0), guard = 0;
+  while (left > 0 && guard++ < 20000) {
+    // the fill front and its priorities
+    let best = -1, bp = -1;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x; if (!hole[i]) continue;
+      if (!(!hole[i - 1] || !hole[i + 1] || !hole[i - w] || !hole[i + w])) continue;
+      let c = 0, n = 0;
+      for (let oy = -R; oy <= R; oy++) for (let ox = -R; ox <= R; ox++) { const xx = x + ox, yy = y + oy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; c += conf[yy * w + xx]; n++; }
+      c /= n;
+      // strongest known gradient near the point (the isophote) against the front's normal
+      let gx = 0, gy = 0, gm = 0;
+      for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) {
+        const xx = x + ox, yy = y + oy; if (xx < 1 || yy < 1 || xx >= w - 1 || yy >= h - 1) continue;
+        const j = yy * w + xx; if (hole[j] || hole[j - 1] || hole[j + 1] || hole[j - w] || hole[j + w]) continue;
+        const dx = gray(j + 1) - gray(j - 1), dy = gray(j + w) - gray(j - w), mag = dx * dx + dy * dy;
+        if (mag > gm) { gm = mag; gx = dx; gy = dy; }
+      }
+      const nx = hole[i + 1] - hole[i - 1], ny = hole[i + w] - hole[i - w], nl = Math.hypot(nx, ny) || 1;
+      const d = Math.abs(-gy * nx / nl + gx * ny / nl) / 255 + 0.001;
+      const pr = c * d;
+      if (pr > best) { best = pr; bp = i; }
+    }
+    if (bp < 0) break;
+    const px = bp % w, py = (bp / w) | 0;
+    // best source patch for the known part of the target patch
+    let bs = -1, bd = Infinity;
+    for (const s0 of src) {
+      const sx = s0 % w, sy = (s0 / w) | 0; let d = 0;
+      for (let oy = -R; oy <= R && d < bd; oy++) for (let ox = -R; ox <= R; ox++) {
+        const tx = px + ox, ty = py + oy; if (tx < 0 || ty < 0 || tx >= w || ty >= h) continue;
+        const t = ty * w + tx; if (hole[t]) continue;
+        const u = (sy + oy) * w + sx + ox;
+        const e0 = img[t * 3] - img[u * 3], e1 = img[t * 3 + 1] - img[u * 3 + 1], e2 = img[t * 3 + 2] - img[u * 3 + 2];
+        d += e0 * e0 + e1 * e1 + e2 * e2;
+      }
+      if (d < bd) { bd = d; bs = s0; }
+    }
+    if (bs < 0) break;
+    const sx = bs % w, sy = (bs / w) | 0, cp = best / (Math.abs(best) > 0 ? 1 : 1);
+    let cc = 0, n = 0;
+    for (let oy = -R; oy <= R; oy++) for (let ox = -R; ox <= R; ox++) { const xx = px + ox, yy = py + oy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; cc += conf[yy * w + xx]; n++; }
+    cc /= n;
+    for (let oy = -R; oy <= R; oy++) for (let ox = -R; ox <= R; ox++) {
+      const tx = px + ox, ty = py + oy; if (tx < 0 || ty < 0 || tx >= w || ty >= h) continue;
+      const t = ty * w + tx; if (!hole[t]) continue;
+      const u = (sy + oy) * w + sx + ox;
+      img[t * 3] = img[u * 3]; img[t * 3 + 1] = img[u * 3 + 1]; img[t * 3 + 2] = img[u * 3 + 2];
+      hole[t] = 0; conf[t] = cc; left--;
+    }
+  }
+}
+async function contentAwareFill(work, fullMask) {
+  const FW = work.width, FH = work.height, sc = Math.min(1, 900 / Math.max(FW, FH));
+  const W = Math.max(8, Math.round(FW * sc)), H = Math.max(8, Math.round(FH * sc));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const cx = cv.getContext('2d'); cx.drawImage(work, 0, 0, W, H);
+  const id = cx.getImageData(0, 0, W, H);
+  const m0 = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    // a pixel is a hole if any full-size pixel under it is
+    const x0 = Math.floor(x / sc), y0 = Math.floor(y / sc), x1 = Math.min(FW, Math.ceil((x + 1) / sc)), y1 = Math.min(FH, Math.ceil((y + 1) / sc));
+    let h = 0; for (let yy = y0; yy < y1 && !h; yy++) for (let xx = x0; xx < x1; xx++) if (fullMask[yy * FW + xx]) { h = 1; break; }
+    m0[y * W + x] = h;
+  }
+  if (!m0.some(v => v)) return;
+  const img0 = new Float32Array(W * H * 3);
+  for (let i = 0; i < W * H; i++) { img0[i * 3] = id.data[i * 4]; img0[i * 3 + 1] = id.data[i * 4 + 1]; img0[i * 3 + 2] = id.data[i * 4 + 2]; }
+  // pyramid
+  const lv = [{ w: W, h: H, img: img0, m: m0 }];
+  while (Math.min(lv[lv.length - 1].w, lv[lv.length - 1].h) > 40 && lv.length < 7) {
+    const P = lv[lv.length - 1], w = P.w >> 1, h = P.h >> 1, img = new Float32Array(w * h * 3), m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x; let n = 0;
+      for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        const j = (y * 2 + dy) * P.w + x * 2 + dx;
+        if (P.m[j]) m[i] = 1;
+        img[i * 3] += P.img[j * 3]; img[i * 3 + 1] += P.img[j * 3 + 1]; img[i * 3 + 2] += P.img[j * 3 + 2]; n++;
+      }
+      img[i * 3] /= n; img[i * 3 + 1] /= n; img[i * 3 + 2] /= n;
+    }
+    lv.push({ w, h, img, m });
+  }
+  const R = 3; // 7×7 patches
+  let prevNN = null, prevW = 0, prevH = 0, prevImg = null;
+  // the start: the smallest level that is still about 48 px or more on its short side
+  let S = lv.length - 1; while (S > 0 && Math.min(lv[S].w, lv[S].h) < 48) S--;
+  for (let L = S; L >= 0; L--) {
+    const { w, h, img, m } = lv[L];
+    // the holes start with lines and edges carried across them (then from the coarser result)
+    if (!prevImg) {
+      const tmp = new Uint8ClampedArray(w * h * 4);
+      for (let i = 0; i < w * h; i++) { tmp[i * 4] = img[i * 3]; tmp[i * 4 + 1] = img[i * 3 + 1]; tmp[i * 4 + 2] = img[i * 3 + 2]; tmp[i * 4 + 3] = 255; }
+      inpaint(tmp, m, w, h);
+      for (let i = 0; i < w * h; i++) if (m[i]) { img[i * 3] = tmp[i * 4]; img[i * 3 + 1] = tmp[i * 4 + 1]; img[i * 3 + 2] = tmp[i * 4 + 2]; }
+      structureFill(img, m, w, h, 2);
+      await new Promise(res => setTimeout(res, 0));
+    } else {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x; if (!m[i]) continue;
+        const j = Math.min(prevH - 1, y >> 1) * prevW + Math.min(prevW - 1, x >> 1);
+        img[i * 3] = prevImg[j * 3]; img[i * 3 + 1] = prevImg[j * 3 + 1]; img[i * 3 + 2] = prevImg[j * 3 + 2];
+      }
+    }
+    // sources: patch centres whose whole patch is known; targets: centres whose patch touches a hole
+    const ii = new Int32Array((w + 1) * (h + 1));
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ii[(y + 1) * (w + 1) + x + 1] = m[y * w + x] + ii[y * (w + 1) + x + 1] + ii[(y + 1) * (w + 1) + x] - ii[y * (w + 1) + x];
+    const holesIn = (x, y) => ii[(y + R + 1) * (w + 1) + x + R + 1] - ii[(y - R) * (w + 1) + x + R + 1] - ii[(y + R + 1) * (w + 1) + x - R] + ii[(y - R) * (w + 1) + x - R];
+    const valid = new Uint8Array(w * h), srcList = [], tgt = [];
+    for (let y = R; y < h - R; y++) for (let x = R; x < w - R; x++) {
+      const n = holesIn(x, y);
+      if (!n) { valid[y * w + x] = 1; srcList.push(y * w + x); } else tgt.push(y * w + x);
+    }
+    if (!srcList.length || !tgt.length) { prevImg = img; prevW = w; prevH = h; continue; }
+    const step = w > 300 ? 2 : 1;
+    const dist = (t, sIdx, best) => {
+      const tx = t % w, ty = (t / w) | 0, sx = sIdx % w, sy = (sIdx / w) | 0;
+      let d = 0;
+      for (let oy = -R; oy <= R; oy += step) {
+        let a = ((ty + oy) * w + tx - R) * 3, b = ((sy + oy) * w + sx - R) * 3;
+        for (let ox = -R; ox <= R; ox += step, a += 3 * step, b += 3 * step) {
+          const e0 = img[a] - img[b], e1 = img[a + 1] - img[b + 1], e2 = img[a + 2] - img[b + 2];
+          d += e0 * e0 + e1 * e1 + e2 * e2;
+        }
+        if (d > best) return d;
+      }
+      return d;
+    };
+    const nn = new Int32Array(w * h).fill(-1), nd = new Float64Array(w * h);
+    const rnd = () => srcList[(Math.random() * srcList.length) | 0];
+    for (const t of tgt) {
+      let c = -1;
+      if (prevNN) {
+        const x = t % w, y = (t / w) | 0, p = prevNN[Math.min(prevH - 1, y >> 1) * prevW + Math.min(prevW - 1, x >> 1)];
+        if (p >= 0) { const nx = (p % prevW) * 2 + (x & 1), ny = ((p / prevW) | 0) * 2 + (y & 1); if (nx < w && ny < h && valid[ny * w + nx]) c = ny * w + nx; }
+      }
+      if (c < 0) c = rnd();
+      nn[t] = c; nd[t] = dist(t, c, Infinity);
+    }
+    const em = L === S ? 1 : L === 0 ? 3 : 4;
+    const sum = new Float32Array(w * h * 3), cnt = new Float32Array(w * h);
+    for (let e = 0; e < em; e++) {
+      // PatchMatch: propagation and random search
+      for (let it = 0; it < 4; it++) {
+        const fwd = it % 2 === 0, dir = fwd ? 1 : -1;
+        for (let q = 0; q < tgt.length; q++) {
+          const t = tgt[fwd ? q : tgt.length - 1 - q], x = t % w, y = (t / w) | 0;
+          for (const nb of [t - dir, t - dir * w]) {
+            const p = nn[nb]; if (p === undefined || p < 0) continue;
+            const c = p + (nb === t - dir ? dir : dir * w);
+            if (c < 0 || c >= w * h || !valid[c]) continue;
+            const d = dist(t, c, nd[t]); if (d < nd[t]) { nd[t] = d; nn[t] = c; }
+          }
+          let rad = Math.max(w, h);
+          const bx = nn[t] % w, by = (nn[t] / w) | 0;
+          while (rad >= 1) {
+            const cx2 = Math.round(bx + (Math.random() * 2 - 1) * rad), cy2 = Math.round(by + (Math.random() * 2 - 1) * rad);
+            if (cx2 >= 0 && cy2 >= 0 && cx2 < w && cy2 < h) { const c = cy2 * w + cx2; if (valid[c]) { const d = dist(t, c, nd[t]); if (d < nd[t]) { nd[t] = d; nn[t] = c; } } }
+            rad >>= 1;
+          }
+        }
+        await new Promise(res => setTimeout(res, 0));
+      }
+      if (L === S) break; // the start keeps its structure fill
+      // voting: every hole pixel takes the average of what the patches over it bring
+      sum.fill(0); cnt.fill(0);
+      for (const t of tgt) {
+        const tx = t % w, ty = (t / w) | 0, s0 = nn[t], sx = s0 % w, sy = (s0 / w) | 0;
+        const wgt = Math.exp(-nd[t] / (49 * 3 * 400));
+        for (let oy = -R; oy <= R; oy++) for (let ox = -R; ox <= R; ox++) {
+          const pi = (ty + oy) * w + tx + ox; if (!m[pi]) continue;
+          const si = (sy + oy) * w + sx + ox;
+          sum[pi * 3] += img[si * 3] * wgt; sum[pi * 3 + 1] += img[si * 3 + 1] * wgt; sum[pi * 3 + 2] += img[si * 3 + 2] * wgt; cnt[pi] += wgt;
+        }
+      }
+      for (let i = 0; i < w * h; i++) if (m[i] && cnt[i] > 0) { img[i * 3] = sum[i * 3] / cnt[i]; img[i * 3 + 1] = sum[i * 3 + 1] / cnt[i]; img[i * 3 + 2] = sum[i * 3 + 2] / cnt[i]; }
+      for (const t of tgt) nd[t] = dist(t, nn[t], Infinity);
+    }
+    prevNN = nn; prevW = w; prevH = h; prevImg = img;
+  }
+  // back into the full picture, only where the holes are
+  const out = cx.createImageData(W, H);
+  for (let i = 0; i < W * H; i++) { out.data[i * 4] = prevImg[i * 3]; out.data[i * 4 + 1] = prevImg[i * 3 + 1]; out.data[i * 4 + 2] = prevImg[i * 3 + 2]; out.data[i * 4 + 3] = 255; }
+  cx.putImageData(out, 0, 0);
+  const big = document.createElement('canvas'); big.width = FW; big.height = FH;
+  const bx = big.getContext('2d'); bx.imageSmoothingQuality = 'high'; bx.drawImage(cv, 0, 0, FW, FH);
+  const g = bx.getImageData(0, 0, FW, FH).data, wx = work.getContext('2d'), wd = wx.getImageData(0, 0, FW, FH), d = wd.data;
+  for (let i = 0; i < FW * FH; i++) if (fullMask[i]) { d[i * 4] = g[i * 4]; d[i * 4 + 1] = g[i * 4 + 1]; d[i * 4 + 2] = g[i * 4 + 2]; }
+  wx.putImageData(wd, 0, 0);
+}
 /* one element of the analysis → a layer, in design coordinates (t: image px → design) */
 function elementLayer(el, t) {
   const cx = t.x((el.x + el.w / 2)), cy = t.y((el.y + el.h / 2)), w = el.w * t.s, h = el.h * t.s;
@@ -2867,8 +3074,9 @@ async function rebuildFromImage(file) {
       const grown = dilate(sub, cw, ch, reach);
       for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (grown[y * cw + x]) mask[(y0 + y) * W + x0 + x] = 1;
     });
-    inpaint(data, mask, W, H);
-    ctx.putImageData(img, 0, 0);
+    busy(true, '背景を作り直しています…（周りの模様から予測しています）');
+    await sleep(30);
+    await contentAwareFill(work, mask);
     // into the design: the picture covers it, the layers go where they were in the picture
     const sc = Math.max(S.W / W, S.H / H), ox = (S.W - W * sc) / 2, oy = (S.H - H * sc) / 2, s2 = sc * k;
     const t = { s: s2, x: v => ox + v * s2, y: v => oy + v * s2 };
