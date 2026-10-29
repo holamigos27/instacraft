@@ -1,5 +1,6 @@
 # instaCRAFT shared-data API — deploy: npx wrangler deploy (from this folder)
 # Secret (same value as CRAQUES HUB's INSTACRAFT_SSO_SECRET on Vercel):  npx wrangler secret put SSO_SECRET
+# Image rebuild (free): npx wrangler secret put GEMINI_API_KEY   (key from aistudio.google.com; optional GEMINI_MODEL)
 name = "instacraft-api"
 main = "src/index.js"
 compatibility_date = "2026-10-01"

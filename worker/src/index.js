@@ -126,6 +126,58 @@ For shapes, text/font/weight are null, italic false, align "center", letter_spac
 name: a short Japanese label for the layer (例: タイトル, スコア, 日付, 帯).
 background: a short description and its main colour.`;
 
+/* Gemini has no strict schema here: the shape is spelled out, and the answer is tidied by normalizeDesign */
+const GEMINI_SHAPE = `Answer with JSON only, in this shape:
+{"background":{"description":string,"color":"#rrggbb"},
+ "elements":[{"kind":"text"|"rect"|"ellipse"|"triangle"|"line","name":string,"x":number,"y":number,"w":number,"h":number,"rotation":number,
+   "text":string|null,"font":one of ${JSON.stringify(DESIGN_FONTS)} or null,"weight":400|500|700|800|900|null,"italic":boolean,"align":"left"|"center"|"right",
+   "letter_spacing":number,"line_height":number,"fill":{"type":"solid"|"gradient"|"none","color":"#rrggbb","color2":"#rrggbb"|null,"angle":number},
+   "stroke":{"color":string,"width":number}|null,"shadow":{"color":string,"blur":number,"offset_x":number,"offset_y":number}|null,"opacity":number,"corner_radius":number}]}`;
+const GEMINI_MODELS = ['gemini-3-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash'];
+async function geminiDesign(env, mime, b64, W, H) {
+  const models = env.GEMINI_MODEL ? [env.GEMINI_MODEL] : GEMINI_MODELS;
+  const body = JSON.stringify({
+    contents: [{ role: 'user', parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: DESIGN_PROMPT.replace('{W}', W).replace('{H}', H) + '\n\n' + GEMINI_SHAPE }] }],
+    generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+  });
+  let last = '';
+  for (const model of models) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body,
+    });
+    if (r.status === 404) { last = model + ' が見つかりません'; continue; } // that model name isn't offered: try the next
+    if (r.status === 429) throw new Error('無料枠の上限に達しました。しばらく待ってからもう一度お試しください');
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error('解析サーバーのエラー：' + (j.error?.message || r.status));
+    const text = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join('');
+    if (!text) throw new Error('この画像は解析できませんでした');
+    try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (e) { throw new Error('解析結果を読み取れませんでした'); }
+  }
+  throw new Error('使えるGeminiのモデルがありません（' + last + '）');
+}
+/* fill in what an answer left out, so the page always gets the same shape */
+function normalizeDesign(d) {
+  const num = (v, def) => (Number.isFinite(+v) ? +v : def);
+  const col = (v, def) => (typeof v === 'string' && v.trim() ? v.trim() : def);
+  const elements = (Array.isArray(d?.elements) ? d.elements : []).map(e => ({
+    kind: ['text', 'rect', 'ellipse', 'triangle', 'line'].includes(e?.kind) ? e.kind : 'rect',
+    name: String(e?.name || ''),
+    x: num(e?.x, 0), y: num(e?.y, 0), w: num(e?.w, 0), h: num(e?.h, 0), rotation: num(e?.rotation, 0),
+    text: e?.text == null ? null : String(e.text),
+    font: DESIGN_FONTS.includes(e?.font) ? e.font : null,
+    weight: [400, 500, 700, 800, 900].includes(+e?.weight) ? +e.weight : null,
+    italic: !!e?.italic,
+    align: ['left', 'center', 'right'].includes(e?.align) ? e.align : 'center',
+    letter_spacing: num(e?.letter_spacing, 0), line_height: num(e?.line_height, 1.1),
+    fill: { type: ['solid', 'gradient', 'none'].includes(e?.fill?.type) ? e.fill.type : 'solid', color: col(e?.fill?.color, '#ffffff'), color2: e?.fill?.color2 ? String(e.fill.color2) : null, angle: num(e?.fill?.angle, 0) },
+    stroke: e?.stroke && num(e.stroke.width, 0) > 0 ? { color: col(e.stroke.color, '#000000'), width: num(e.stroke.width, 0) } : null,
+    shadow: e?.shadow ? { color: col(e.shadow.color, 'rgba(0,0,0,0.5)'), blur: num(e.shadow.blur, 0), offset_x: num(e.shadow.offset_x, 0), offset_y: num(e.shadow.offset_y, 0) } : null,
+    opacity: Math.max(0, Math.min(1, num(e?.opacity, 1))),
+    corner_radius: num(e?.corner_radius, 0),
+  })).filter(e => e.kind !== 'text' || (e.text && e.text.trim()));
+  return { background: { description: String(d?.background?.description || ''), color: col(d?.background?.color, '#000000') }, elements };
+}
+
 const actions = {
   async icList(p, env) {
     const { results } = await env.DB.prepare('SELECT data, version, updated_by FROM docs WHERE kind = ?').bind(kindOf(p)).all();
@@ -214,11 +266,13 @@ const actions = {
   },
   // an SNS graphic → its texts and flat shapes, for rebuilding it as editable layers (Claude vision)
   async icAnalyzeDesign(p, env) {
-    if (!env.ANTHROPIC_API_KEY) throw new Error('画像からの再現機能はまだ設定されていません（管理者がAPIキーを登録すると使えます）');
+    if (!env.GEMINI_API_KEY && !env.ANTHROPIC_API_KEY) throw new Error('画像からの再現機能はまだ設定されていません（管理者がAPIキーを登録すると使えます）');
     const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(p.image || ''));
     if (!m) throw new Error('画像が読めません');
     if (m[2].length > 4_500_000) throw new Error('画像が大きすぎます');
     const W = Math.round(+p.width) || 0, H = Math.round(+p.height) || 0;
+    // Gemini (free tier) when its key is registered, otherwise Claude
+    if (env.GEMINI_API_KEY) return normalizeDesign(await geminiDesign(env, m[1], m[2], W, H));
     const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
     const res = await client.beta.messages.create({
       model: 'claude-opus-5-5',
@@ -234,7 +288,7 @@ const actions = {
     if (res.stop_reason === 'refusal') throw new Error('この画像は解析できませんでした');
     if (res.stop_reason === 'max_tokens') throw new Error('要素が多すぎて解析しきれませんでした');
     const text = res.content.find(b => b.type === 'text')?.text || '';
-    try { return JSON.parse(text); } catch (e) { throw new Error('解析結果を読み取れませんでした'); }
+    try { return normalizeDesign(JSON.parse(text)); } catch (e) { throw new Error('解析結果を読み取れませんでした'); }
   },
   async logout(p, env, who) {
     await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(who.token).run();
