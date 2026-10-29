@@ -3386,10 +3386,28 @@ function showCapMode() {
     ? (t.multi?.trim() ? `<i class="fa-solid fa-layer-group text-accent"></i> ${n}試合 → 複数試合用の文章を使用中` : `<i class="fa-solid fa-layer-group"></i> ${n}試合（複数試合用が未作成のため1試合用を試合数だけ繰り返し）`)
     : `<i class="fa-regular fa-file-lines"></i> 1試合用の文章を使用中${t.multi?.trim() ? '（画像ごとに試合が違うと複数試合用に切替）' : ''}`;
 }
+/* a result image: its design shows a score (or the scorers) */
+const SCORE_RE = /\{(自チームスコア|相手スコア)\}/;
+function isScoreText(o) {
+  if (o.scorerBox) return true;
+  if (o.type !== 'textbox') return false;
+  return SCORE_RE.test(o.tpl || '') || SCORE_RE.test(nameTemplates()[o.name] || '');
+}
+const RESULT_CACHE = new Map();
+function slideIsResult(sl) {
+  if (sl === CUR.post.slides[CUR.idx]) return canvas.getObjects().some(isScoreText);
+  if (!sl.state) return false;
+  const c = RESULT_CACHE.get(sl.id);
+  if (c && c.state === sl.state) return c.v;
+  let v = false;
+  try { v = (JSON.parse(sl.state).json.objects || []).some(isScoreText); } catch (e) { /* no design yet */ }
+  RESULT_CACHE.set(sl.id, { state: sl.state, v });
+  return v;
+}
 /* the images of the post, each with its info (the open one live) */
 function captionSlides() {
   if (!CUR.post || CUR.kind !== 'post') return [{ id: 'one', info: { ...S.info } }];
-  return CUR.post.slides.map(sl => ({ id: sl.id, info: { ...slideInfoOf(sl) } }));
+  return CUR.post.slides.map(sl => ({ id: sl.id, info: { ...slideInfoOf(sl) }, result: slideIsResult(sl) }));
 }
 /* The template's match paragraph (the one with the score, or with team and opponent) is written once
    per different match among the images; "{対戦相手}の皆様" elsewhere lists every opponent
@@ -3402,9 +3420,12 @@ function captionParts(tpl, slides) {
   let bi = paras.findIndex(x => /\{(自チームスコア|相手スコア)\}/.test(x));
   if (bi < 0) bi = paras.findIndex(x => x.includes('{対戦相手}') && x.includes('{チーム名}'));
   const blocks = [], opps = [];
+  // one paragraph per result image (same match twice is written twice); with no result image,
+  // one per different match among the images
+  const anyResult = slides.some(sl => sl.result);
   if (bi >= 0) slides.forEach(sl => {
     const text = fill(paras[bi], sl.info);
-    if (blocks.some(b => b.text === text)) return;
+    if (anyResult ? !sl.result : blocks.some(b => b.text === text)) return;
     blocks.push({ key: 'b:' + sl.id, text });
     const o = String(sl.info.opponent || '').trim(); if (o && !opps.includes(o)) opps.push(o);
   });
@@ -3439,7 +3460,7 @@ function insertTemplate(ask = true) {
   onCaptionChange(); showCapMode();
 }
 /* the infos the caption was written with; later edits of the info are carried into the caption */
-const captionSnapNow = () => ({ slides: captionSlides().map(x => ({ id: x.id, info: { ...x.info, teamName: teamOf(x.info).name } })) });
+const captionSnapNow = () => ({ slides: captionSlides().map(x => ({ id: x.id, result: x.result, info: { ...x.info, teamName: teamOf(x.info).name } })) });
 function noteCaptionInfo() { S.capSnap = captionSnapNow(); if (CUR.post && CUR.kind === 'post') CUR.post.capSnap = S.capSnap; }
 /* The caption follows the info even after it was edited by hand: every part (match paragraph per
    image, other paragraphs) still in the caption as it was written is rewritten — whole, or line by
@@ -3458,20 +3479,43 @@ function syncCaptionInfo() {
       ol.forEach((l, i) => { const to = nl[i]; if (to == null || l === to || !l.trim()) return; lines.forEach((x, j) => { if (x.trimEnd() === l.trimEnd()) lines[j] = to; }); });
       v = lines.join('\n');
     };
+    // the n-th copy, when several images wrote the same paragraph (same match twice)
+    const replaceNth = (from, to, n) => {
+      let at = -1; for (let c = 0; c < n; c++) { const f = v.indexOf(from, at + 1); if (f < 0) return false; at = f; }
+      v = v.slice(0, at) + to + v.slice(at + from.length); return true;
+    };
+    const nthOf = (parts, p, test) => parts.slice(0, parts.indexOf(p) + 1).filter(test).length;
     // parts that stayed: whole paragraph if it is still as written, else line by line
     newParts.forEach(np => {
       const op = oldParts.find(x => x.key === np.key);
       if (!op || op.text === np.text) return;
-      if (v.includes(op.text)) v = v.replace(op.text, np.text); else replaceLines(op.text, np.text);
+      if (replaceNth(op.text, np.text, nthOf(oldParts, op, x => x.text === op.text))) return;
+      if (oldParts.filter(x => x.text === op.text).length < 2) { replaceLines(op.text, np.text); return; }
+      // a hand-edited copy of a paragraph other images share: only its own lines, by their order
+      const ol = op.text.split('\n'), nl = np.text.split('\n');
+      ol.forEach((l, i) => {
+        if (nl[i] == null || l === nl[i] || !l.trim()) return;
+        const n = nthOf(oldParts, op, x => x.text.split('\n').includes(l)), lines = v.split('\n');
+        let c = 0; const j = lines.findIndex(x => x.trimEnd() === l.trimEnd() && ++c === n);
+        if (j >= 0) { lines[j] = nl[i]; v = lines.join('\n'); }
+      });
     });
     // a part that is gone (a match, or a paragraph only the other template has): drop it if untouched
     oldParts.forEach(op => { if (!newParts.some(x => x.key === op.key) && op.text.trim() && v.includes(op.text)) v = v.replace(op.text + '\n\n', '').replace('\n\n' + op.text, '').replace(op.text, ''); });
     // a new match: after the paragraph before it
     newParts.forEach((np, i) => {
-      if (oldParts.some(x => x.key === np.key) || v.includes(np.text)) return;
-      const prev = newParts.slice(0, i).reverse().find(x => v.includes(x.text));
+      if (oldParts.some(x => x.key === np.key)) return;
+      // the same paragraph may be there for another image: only as often as it is wanted
+      const want = newParts.slice(0, i + 1).filter(x => x.text === np.text).length;
+      if (v.split(np.text).length - 1 >= want) return;
+      const prevAt = newParts.slice(0, i).map((x, j) => [x, j]).reverse().find(([x]) => v.includes(x.text));
       const next = newParts.slice(i + 1).find(x => v.includes(x.text));
-      if (prev) { const at = v.indexOf(prev.text) + prev.text.length; v = v.slice(0, at) + '\n\n' + np.text + v.slice(at); }
+      if (prevAt) {
+        // the n-th time that text is in the caption, when the same paragraph is there more than once
+        const [prev, j] = prevAt, nth = newParts.slice(0, j + 1).filter(x => x.text === prev.text).length;
+        let at = -1; for (let c = 0; c < nth; c++) { const f = v.indexOf(prev.text, at + 1); if (f < 0) break; at = f; }
+        at += prev.text.length; v = v.slice(0, at) + '\n\n' + np.text + v.slice(at);
+      }
       else if (next) { const at = v.indexOf(next.text); v = v.slice(0, at) + np.text + '\n\n' + v.slice(at); }
       else v = np.text + '\n\n' + v;
     });
