@@ -136,6 +136,30 @@ const GEMINI_SHAPE = `Answer with JSON only, in this shape:
 box_2d is the element's bounding box on screen (as drawn, including its rotation), normalised to 0-1000: [ymin, xmin, ymax, xmax]. Stroke widths, blurs and offsets stay in pixels of the image.
 List every text you can read - a picture with lettering always has elements.`;
 const GEMINI_MODELS = ['gemini-3-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash'];
+/* the same shape as Gemini's response schema (OpenAPI style), so it has to answer with these names */
+const gS = (type, extra = {}) => ({ type, ...extra }), gN = (t, extra = {}) => ({ ...gS(t, extra), nullable: true });
+const gO = (props, req = Object.keys(props)) => ({ type: 'OBJECT', properties: props, required: req });
+const GEMINI_SCHEMA = gO({
+  background: gO({ description: gS('STRING'), color: gS('STRING') }),
+  elements: gS('ARRAY', { items: gO({
+    kind: gS('STRING', { enum: ['text', 'rect', 'ellipse', 'triangle', 'line'] }),
+    name: gS('STRING'),
+    box_2d: gS('ARRAY', { items: gS('NUMBER') }),
+    rotation: gS('NUMBER'),
+    text: gN('STRING'),
+    font: gN('STRING', { enum: DESIGN_FONTS }),
+    weight: gN('INTEGER'),
+    italic: gS('BOOLEAN'),
+    align: gS('STRING', { enum: ['left', 'center', 'right'] }),
+    letter_spacing: gS('NUMBER'),
+    line_height: gS('NUMBER'),
+    fill: gO({ type: gS('STRING', { enum: ['solid', 'gradient', 'none'] }), color: gS('STRING'), color2: gN('STRING'), angle: gS('NUMBER') }),
+    stroke: gN('OBJECT', { properties: { color: gS('STRING'), width: gS('NUMBER') }, required: ['color', 'width'] }),
+    shadow: gN('OBJECT', { properties: { color: gS('STRING'), blur: gS('NUMBER'), offset_x: gS('NUMBER'), offset_y: gS('NUMBER') }, required: ['color', 'blur', 'offset_x', 'offset_y'] }),
+    opacity: gS('NUMBER'),
+    corner_radius: gS('NUMBER'),
+  }, ['kind', 'name', 'box_2d', 'rotation', 'text', 'fill', 'opacity']) }),
+});
 async function geminiDesign(env, mime, b64, W, H) {
   const models = env.GEMINI_MODEL ? [env.GEMINI_MODEL] : GEMINI_MODELS;
   const contents = [{ role: 'user', parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: DESIGN_PROMPT.replace('{W}', W).replace('{H}', H) + '\n\n' + GEMINI_SHAPE }] }];
@@ -143,8 +167,8 @@ async function geminiDesign(env, mime, b64, W, H) {
   const thinking = model => (/gemini-3/.test(model) ? { thinkingLevel: 'low' } : { thinkingBudget: 1024 });
   let last = '';
   for (const model of models) {
-    for (const withThinking of [true, false]) {
-      const generationConfig = { responseMimeType: 'application/json', temperature: 0.2, ...(withThinking ? { thinkingConfig: thinking(model) } : {}) };
+    for (const [withThinking, withSchema] of [[true, true], [false, true], [false, false]]) {
+      const generationConfig = { responseMimeType: 'application/json', temperature: 0.2, ...(withSchema ? { responseSchema: GEMINI_SCHEMA } : {}), ...(withThinking ? { thinkingConfig: thinking(model) } : {}) };
       // streamed, so the connection never sits idle long enough to time out
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify({ contents, generationConfig }),
@@ -153,7 +177,7 @@ async function geminiDesign(env, mime, b64, W, H) {
       if (r.status === 429) throw new Error('無料枠の上限に達しました。しばらく待ってからもう一度お試しください');
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        if (r.status === 400 && withThinking && /thinking/i.test(j.error?.message || '')) continue; // this model takes no thinking setting
+        if (r.status === 400 && (withThinking || withSchema)) continue; // a setting this model does not take: try without it
         throw new Error('解析サーバーのエラー：' + (j.error?.message || r.status));
       }
       const sse = await r.text();
@@ -178,8 +202,12 @@ async function geminiDesign(env, mime, b64, W, H) {
 /* Gemini's own boxes ([ymin, xmin, ymax, xmax] in 0-1000, as drawn) → x, y, w, h in pixels before rotation */
 function fromBox2d(d, W, H) {
   const list = d?.elements || d?.layers || d?.items || (Array.isArray(d) ? d : []);
-  const elements = list.map(e => {
-    const b = e?.box_2d || e?.box || e?.bbox;
+  const elements = list.map(e0 => {
+    // names other models use for the same things
+    const e = { ...e0, kind: e0?.kind || e0?.type || e0?.element_type, text: e0?.text ?? e0?.content ?? e0?.value ?? null };
+    const bb = e0?.bounding_box || e0?.boundingBox || e0?.position;
+    if (bb && !Array.isArray(bb) && typeof bb === 'object') Object.assign(e, { x: bb.x ?? bb.left, y: bb.y ?? bb.top, w: bb.w ?? bb.width, h: bb.h ?? bb.height });
+    const b = e?.box_2d || e?.box || e?.bbox || (Array.isArray(bb) ? bb : null);
     if (!Array.isArray(b) || b.length !== 4) return e;
     const [y0, x0, y1, x1] = b.map(Number);
     const bw = (x1 - x0) / 1000 * W, bh = (y1 - y0) / 1000 * H, cx = (x0 + x1) / 2000 * W, cy = (y0 + y1) / 2000 * H;
@@ -320,7 +348,7 @@ const actions = {
     // Gemini (free tier) when its key is registered, otherwise Claude
     if (env.GEMINI_API_KEY) {
       const raw = await geminiDesign(env, m[1], m[2], W, H), d = normalizeDesign(fromBox2d(raw, W, H));
-      if (!d.elements.length) throw new Error('解析結果に文字が見つかりませんでした（返答：' + JSON.stringify(raw).slice(0, 160) + '）');
+      if (!d.elements.some(e => e.w > 1 && e.h > 1)) throw new Error('解析結果を読み取れませんでした（返答：' + JSON.stringify(raw).slice(0, 300) + '）');
       return d;
     }
     const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
