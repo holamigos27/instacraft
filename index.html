@@ -28,7 +28,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Grand+Hotel&family=Montserrat:ital,wght@0,500;0,800;0,900;1,800;1,900&family=Noto+Sans+JP:wght@400;500;700;900&family=Oswald:wght@400;500;700&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Grand+Hotel&family=Montserrat:ital,wght@0,500;0,800;0,900;1,800;1,900&family=Noto+Sans+JP:wght@400;500;700;900&family=Oswald:wght@400;500;700&family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Teko:wght@500;700&family=Russo+One&family=Dela+Gothic+One&family=Shippori+Mincho:wght@700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -2605,18 +2605,205 @@ function renderQuickTools() {
   const tb = (act, icon, label) => `<button class="mini-btn flex items-center gap-1.5" data-mt="${act}" title="${label}"><i class="fa-solid ${icon} text-accent"></i><span class="mt-label">${label}</span></button>`;
   // shapes and texts live in the left panel's 素材 / テキスト tabs; this row keeps the photo tools
   $('#quickTools').innerHTML =
-    tb('upload', 'fa-upload', '画像追加') + tb('cover', 'fa-expand', '全面に敷く') + tb('shape:dim', 'fa-moon', '暗幕') + tb('shape:bottomGrad', 'fa-circle-half-stroke', '下部グラデ') +
+    tb('upload', 'fa-upload', '画像追加') + tb('rebuild', 'fa-wand-magic-sparkles', '画像から再現') + tb('cover', 'fa-expand', '全面に敷く') + tb('shape:dim', 'fa-moon', '暗幕') + tb('shape:bottomGrad', 'fa-circle-half-stroke', '下部グラデ') +
     `<select class="field !w-auto !py-1 !text-[11px]" id="quickFx"><option value="">フィルター…</option>${Object.keys(FX_PRESETS).map(k => `<option value="${k}">${FX_LABEL[k]}</option>`).join('')}</select>`;
 }
 $('#quickTools').addEventListener('click', e => {
   const b = e.target.closest('[data-mt]'); if (!b) return;
   const [a, v] = b.dataset.mt.split(':');
   if (a === 'upload') $('#fileInput').click();
+  if (a === 'rebuild') pickFileRaw().then(f => f && rebuildFromImage(f));
   if (a === 'cover') { const img = targetImage(); if (!img) return toast('画像がありません', 'fa-circle-info', 'text-sky'); coverImage(img); canvas.moveTo(img, 1); canvas.setActiveObject(img); canvas.requestRenderAll(); saveHistory(); }
   if (a === 'shape') addShape(v);
   if (a === 'text') addObj(TEXTS.heading());
 });
 $('#quickTools').addEventListener('change', e => { if (e.target.id === 'quickFx' && e.target.value) { applyFxPreset(e.target.value); e.target.value = ''; } });
+
+/* ==========================================================
+   REBUILD A DESIGN FROM AN IMAGE
+   An SNS graphic is read by Claude (through the instaCRAFT server): every text and flat shape with
+   its box, font, colours, outline, shadow / glow and gradient. Those are taken out of the picture
+   (their pixels, found by colour inside each box, are filled in from around them) and drawn again
+   as layers, so the picture keeps the photo, light and shadow and the texts become editable.
+   ========================================================== */
+function pickFileRaw() {
+  return new Promise(res => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+    inp.onchange = () => res(inp.files[0] || null); inp.click();
+  });
+}
+const loadImg = src => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('画像を読み込めません')); im.src = src; });
+const fileURL = f => new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(f); });
+function busy(on, text = '') {
+  let el = $('#busyOverlay');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'busyOverlay';
+    el.className = 'fixed inset-0 z-[80] bg-black/60 hidden items-center justify-center';
+    el.innerHTML = '<div class="bg-panel border border-line rounded-2xl px-6 py-5 flex items-center gap-3 text-sm text-slate-200 shadow-2xl"><i class="fa-solid fa-circle-notch fa-spin text-accent text-lg"></i><span data-t></span></div>';
+    document.body.appendChild(el);
+  }
+  el.querySelector('[data-t]').textContent = text;
+  el.classList.toggle('hidden', !on); el.classList.toggle('flex', on);
+}
+const hexRGB = c => { const x = new fabric.Color(c || '#000000').getSource(); return [x[0], x[1], x[2], x[3] ?? 1]; };
+/* pixels of the element inside its (rotated) box whose colour is one of the element's colours */
+function elementMask(el, data, W, H, k, mask) {
+  const cx = (el.x + el.w / 2) * k, cy = (el.y + el.h / 2) * k, a = -(el.rotation || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+  const sw = (el.stroke?.width || 0) * k, sh = el.shadow ? (el.shadow.blur + Math.max(Math.abs(el.shadow.offset_x), Math.abs(el.shadow.offset_y))) * k * 0.6 : 0;
+  const m = Math.max(4, sw * 2 + sh + Math.min(el.w, el.h) * k * 0.08);
+  const hw = el.w * k / 2 + m, hh = el.h * k / 2 + m;
+  const cols = [];
+  if (el.fill?.type !== 'none') { cols.push(hexRGB(el.fill.color)); if (el.fill.color2) { const c1 = hexRGB(el.fill.color), c2 = hexRGB(el.fill.color2); for (let t = 0.25; t < 1; t += 0.25) cols.push(c1.map((v, i) => v + (c2[i] - v) * t)); cols.push(c2); } }
+  if (el.stroke) cols.push(hexRGB(el.stroke.color));
+  const R = Math.ceil(Math.hypot(hw, hh));
+  const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(W - 1, Math.ceil(cx + R)), y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(H - 1, Math.ceil(cy + R));
+  const thr = el.kind === 'text' ? 70 : 55;
+  let n = 0, bx0 = Infinity, by0 = Infinity, bx1 = -1, by1 = -1;
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const dx = x - cx, dy = y - cy, u = dx * ca - dy * sa, v = dx * sa + dy * ca;
+    if (Math.abs(u) > hw || Math.abs(v) > hh) continue;
+    const i = (y * W + x) * 4, r = data[i], g = data[i + 1], b = data[i + 2];
+    if (!cols.some(c => Math.hypot(r - c[0], g - c[1], b - c[2]) < thr)) continue;
+    mask[y * W + x] = 1; n++;
+    if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
+  }
+  return n ? { n, box: [bx0, by0, bx1, by1] } : null;
+}
+function dilate(mask, W, H, r) {
+  if (r < 1) return mask;
+  const out = new Uint8Array(mask.length), tmp = new Uint8Array(mask.length);
+  for (let y = 0; y < H; y++) { let last = -1e9; for (let x = 0; x < W; x++) { if (mask[y * W + x]) last = x; if (x - last <= r) tmp[y * W + x] = 1; } last = 1e9; for (let x = W - 1; x >= 0; x--) { if (mask[y * W + x]) last = x; if (last - x <= r) tmp[y * W + x] = 1; } }
+  for (let x = 0; x < W; x++) { let last = -1e9; for (let y = 0; y < H; y++) { if (tmp[y * W + x]) last = y; if (y - last <= r) out[y * W + x] = 1; } last = 1e9; for (let y = H - 1; y >= 0; y--) { if (tmp[y * W + x]) last = y; if (last - y <= r) out[y * W + x] = 1; } }
+  return out;
+}
+/* fill the masked pixels from their surroundings (push-pull: averages of known pixels, coarse to fine) */
+function inpaint(data, mask, W, H) {
+  const levels = [];
+  let w = W, h = H, col = new Float32Array(W * H * 3), wt = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) if (!mask[i]) { col[i * 3] = data[i * 4]; col[i * 3 + 1] = data[i * 4 + 1]; col[i * 3 + 2] = data[i * 4 + 2]; wt[i] = 1; }
+  levels.push({ w, h, col, wt });
+  while (w > 1 || h > 1) {
+    const nw = Math.max(1, w >> 1), nh = Math.max(1, h >> 1), nc = new Float32Array(nw * nh * 3), nwt = new Float32Array(nw * nh);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const j = Math.min(nh - 1, y >> 1) * nw + Math.min(nw - 1, x >> 1), i = y * w + x, q = wt[i];
+      if (!q) continue;
+      nwt[j] += q; nc[j * 3] += col[i * 3] * q; nc[j * 3 + 1] += col[i * 3 + 1] * q; nc[j * 3 + 2] += col[i * 3 + 2] * q;
+    }
+    for (let j = 0; j < nw * nh; j++) if (nwt[j]) { nc[j * 3] /= nwt[j]; nc[j * 3 + 1] /= nwt[j]; nc[j * 3 + 2] /= nwt[j]; nwt[j] = Math.min(1, nwt[j]); }
+    w = nw; h = nh; col = nc; wt = nwt; levels.push({ w, h, col, wt });
+  }
+  for (let l = levels.length - 2; l >= 0; l--) {
+    const L = levels[l], U = levels[l + 1];
+    for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
+      const i = y * L.w + x; if (L.wt[i] >= 1) continue;
+      // bilinear from the coarser level
+      const fx = Math.min(U.w - 1, Math.max(0, (x + 0.5) / 2 - 0.5)), fy = Math.min(U.h - 1, Math.max(0, (y + 0.5) / 2 - 0.5));
+      const xa = Math.floor(fx), ya = Math.floor(fy), xb = Math.min(U.w - 1, xa + 1), yb = Math.min(U.h - 1, ya + 1), tx = fx - xa, ty = fy - ya;
+      const q = 1 - L.wt[i];
+      for (let c = 0; c < 3; c++) {
+        const v = (U.col[(ya * U.w + xa) * 3 + c] * (1 - tx) + U.col[(ya * U.w + xb) * 3 + c] * tx) * (1 - ty) + (U.col[(yb * U.w + xa) * 3 + c] * (1 - tx) + U.col[(yb * U.w + xb) * 3 + c] * tx) * ty;
+        L.col[i * 3 + c] = L.col[i * 3 + c] * L.wt[i] + v * q;
+      }
+      L.wt[i] = 1;
+    }
+  }
+  const top = levels[0].col;
+  for (let i = 0; i < W * H; i++) if (mask[i]) { data[i * 4] = top[i * 3]; data[i * 4 + 1] = top[i * 3 + 1]; data[i * 4 + 2] = top[i * 3 + 2]; }
+  // a little grain so the filled areas don't look smeared flat
+  for (let i = 0; i < W * H; i++) if (mask[i]) { const g = (Math.random() - 0.5) * 6; data[i * 4] += g; data[i * 4 + 1] += g; data[i * 4 + 2] += g; }
+}
+/* one element of the analysis → a layer, in design coordinates (t: image px → design) */
+function elementLayer(el, t) {
+  const cx = t.x((el.x + el.w / 2)), cy = t.y((el.y + el.h / 2)), w = el.w * t.s, h = el.h * t.s;
+  const base = { originX: 'center', originY: 'center', left: cx, top: cy, angle: el.rotation || 0, opacity: el.opacity ?? 1, name: el.name || (el.kind === 'text' ? 'テキスト' : '図形') };
+  const solid = el.fill?.type === 'none' ? 'rgba(0,0,0,0)' : (el.fill?.color || '#ffffff');
+  const fx = o => {
+    if (el.stroke && el.stroke.width > 0) o.set({ stroke: el.stroke.color, strokeWidth: el.stroke.width * t.s, paintFirst: 'stroke', strokeUniform: o.type !== 'textbox' });
+    if (el.shadow) o.set('shadow', new fabric.Shadow({ color: el.shadow.color, blur: el.shadow.blur * t.s, offsetX: el.shadow.offset_x * t.s, offsetY: el.shadow.offset_y * t.s }));
+    if (el.fill?.type === 'gradient' && el.fill.color2) { o.gradFill = { c1: el.fill.color, c2: el.fill.color2, angle: el.fill.angle || 0 }; applyGradFill(o); }
+    return o;
+  };
+  if (el.kind === 'text') {
+    const text = String(el.text || '').replace(/\r/g, ''), lines = text.split('\n'), lh = el.line_height > 0.5 ? el.line_height : 1.1;
+    const font = FONTS.includes(el.font) ? el.font : 'Noto Sans JP';
+    const props = { fontFamily: font, fontWeight: el.weight || 700, fontStyle: el.italic ? 'italic' : 'normal', charSpacing: el.letter_spacing || 0, lineHeight: lh, textAlign: el.align || 'center' };
+    // the size that fills the box: by height first, then the widest line fitted to the width
+    let fs = Math.max(8, h / (lines.length * lh * 1.13) * 1.12);
+    const probe = new fabric.Text(text, { ...props, fontSize: fs });
+    if (probe.width > 0) { const byW = fs * w / probe.width; fs = Math.max(fs * 0.6, Math.min(fs * 1.5, byW)); }
+    const box = new fabric.Textbox(text, { ...base, ...props, fontSize: fs, fill: solid, splitByGrapheme: /[\u3040-\u9fff]/.test(text) });
+    const wide = new fabric.Text(text, { ...props, fontSize: fs }).width;
+    box.set('width', Math.ceil(Math.max(w, wide) + 4)); box.initDimensions();
+    return fx(box);
+  }
+  let o;
+  if (el.kind === 'ellipse') o = new fabric.Ellipse({ ...base, rx: w / 2, ry: h / 2, fill: solid });
+  else if (el.kind === 'triangle') o = new fabric.Triangle({ ...base, width: w, height: h, fill: solid });
+  else o = new fabric.Rect({ ...base, width: w, height: Math.max(1, h), rx: (el.corner_radius || 0) * t.s, ry: (el.corner_radius || 0) * t.s, fill: solid, strokeWidth: 0 });
+  return fx(o);
+}
+async function rebuildFromImage(file) {
+  if (!CUR.post) return;
+  if (!REMOTE) return toast('画像からの再現は、CRAQUES HUB から開いた共有モードで使えます', 'fa-circle-info', 'text-sky', 4500);
+  const hasContent = canvas.getObjects().some(o => o.role !== 'bg');
+  if (hasContent && !confirm('表示中のスライドを、この画像から作ったレイヤーで置き換えますか？（元に戻すで戻せます）')) return;
+  try {
+    busy(true, '画像を準備しています…');
+    const src = await fileURL(file), im = await loadImg(src);
+    // the size closest to the picture's shape
+    const ar = im.width / im.height, best = Object.entries(RATIOS).sort((a, b) => Math.abs(a[1][0] / a[1][1] - ar) - Math.abs(b[1][0] / b[1][1] - ar))[0][0];
+    if (best !== S.ratio) await setRatio(best, { record: false });
+    // what Claude reads (≤1568 px) and what we work on (≤2160 px)
+    const scaled = (max, type, q) => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); return { c, url: type ? c.toDataURL(type, q) : null }; };
+    const look = scaled(1568, 'image/jpeg', 0.9);
+    busy(true, 'AIがデザインを解析しています…（30秒〜1分ほどかかります）');
+    const res = await api('icAnalyzeDesign', { image: look.url, width: look.c.width, height: look.c.height });
+    busy(true, '文字を取り除いて、レイヤーを作っています…');
+    await fontsReady;
+    const work = scaled(2160).c, W = work.width, H = work.height, k = W / look.c.width;
+    const ctx = work.getContext('2d'), img = ctx.getImageData(0, 0, W, H), data = img.data;
+    let mask = new Uint8Array(W * H);
+    const els = (res.elements || []).filter(e => e.w > 1 && e.h > 1);
+    els.forEach(el => {
+      const r = elementMask(el, data, W, H, k, mask);
+      // an upright element takes the box its pixels really fill (the analysis box is approximate)
+      if (r && Math.abs(el.rotation || 0) < 1 && r.n > 30) {
+        const [x0, y0, x1, y1] = r.box.map(v => v / k), sh = el.shadow ? el.shadow.blur * 0.5 + Math.abs(el.shadow.offset_x) : 0;
+        if (!sh) { const nw = x1 - x0 + 1, nh = y1 - y0 + 1; if (nw > el.w * 0.6 && nw < el.w * 1.4 && nh > el.h * 0.6 && nh < el.h * 1.4) Object.assign(el, { x: x0, y: y0, w: nw, h: nh }); }
+      }
+    });
+    mask = dilate(mask, W, H, Math.max(2, Math.round(W / 400)));
+    // a shadow or glow spreads around the letters: everything within its reach goes too
+    els.forEach(el => {
+      if (!el.shadow || el.kind !== 'text') return;
+      const reach = Math.round((el.shadow.blur * 0.9 + Math.max(Math.abs(el.shadow.offset_x), Math.abs(el.shadow.offset_y))) * k);
+      if (reach < 2) return;
+      const pad = reach + 2, x0 = Math.max(0, Math.floor(el.x * k - pad)), y0 = Math.max(0, Math.floor(el.y * k - pad));
+      const x1 = Math.min(W, Math.ceil((el.x + el.w) * k + pad)), y1 = Math.min(H, Math.ceil((el.y + el.h) * k + pad)), cw = x1 - x0, ch = y1 - y0;
+      if (cw < 1 || ch < 1) return;
+      const sub = new Uint8Array(cw * ch);
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) sub[y * cw + x] = mask[(y0 + y) * W + x0 + x];
+      const grown = dilate(sub, cw, ch, reach);
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (grown[y * cw + x]) mask[(y0 + y) * W + x0 + x] = 1;
+    });
+    inpaint(data, mask, W, H);
+    ctx.putImageData(img, 0, 0);
+    // into the design: the picture covers it, the layers go where they were in the picture
+    const sc = Math.max(S.W / W, S.H / H), ox = (S.W - W * sc) / 2, oy = (S.H - H * sc) / 2, s2 = sc * k;
+    const t = { s: s2, x: v => ox + v * s2, y: v => oy + v * s2 };
+    const bg = new fabric.Image(await loadImg(work.toDataURL('image/jpeg', 0.92)), { name: '背景写真', originX: 'center', originY: 'center', left: S.W / 2, top: S.H / 2, scaleX: sc, scaleY: sc, fullBleed: true });
+    const layers = els.map(el => elementLayer(el, t));
+    replaceSlideObjects([bg, ...layers]);
+    canvas.getObjects().forEach(o => { if (o.type === 'textbox') o.initDimensions(); });
+    canvas.requestRenderAll();
+    busy(false);
+    toast(`再現しました：テキスト${els.filter(e => e.kind === 'text').length}・図形${els.filter(e => e.kind !== 'text').length}（レイヤーで編集できます）`, 'fa-wand-magic-sparkles', 'text-accent', 5000);
+    showLeftTab('layer');
+  } catch (e) {
+    busy(false);
+    toast('再現できませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 6000);
+  }
+}
 
 /* ---------------- object operations ---------------- */
 function objOp(op) {
@@ -2851,7 +3038,7 @@ window.addEventListener('pointerup', e => {
 /* ==========================================================
    PROPERTY PANEL
    ========================================================== */
-const FONTS = ['Bebas Neue', 'Anton', 'Oswald', 'Montserrat', 'Noto Sans JP', 'Zen Kaku Gothic New'];
+const FONTS = ['Bebas Neue', 'Anton', 'Oswald', 'Montserrat', 'Teko', 'Russo One', 'Noto Sans JP', 'Zen Kaku Gothic New', 'Dela Gothic One', 'Shippori Mincho', 'Grand Hotel'];
 const teamSwatches = () => [S.team.accent, S.team.primary, S.team.secondary, '#ffffff', '#000000', '#ff3b5c'];
 const C = {
   range: (k, label, min, max, step, val, unit = '') => `<label class="ctl"><span class="ctl-l">${label}<b data-out="${k}" data-unit="${unit}">${val}${unit}</b></span><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${val}"></label>`,

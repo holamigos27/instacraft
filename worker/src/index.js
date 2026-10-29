@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 // instaCRAFT shared-data API (Cloudflare Worker + D1)
 //   POST /auth  { ticket }           → { token, name, expiresAt }   (ticket = CRAQUES HUB's signed, 60 s, one-time STAFF ticket)
 //   POST /rpc   { action, payload }  → { success, data } / { success: false, error }   (Authorization: Bearer <token>)
@@ -82,6 +83,48 @@ function idOf(v) {
   if (!/^[\w-]{4,64}$/.test(s)) throw new Error('ID が不正です');
   return s;
 }
+
+const DESIGN_FONTS = ['Bebas Neue', 'Anton', 'Oswald', 'Montserrat', 'Teko', 'Russo One', 'Noto Sans JP', 'Zen Kaku Gothic New', 'Dela Gothic One', 'Shippori Mincho', 'Grand Hotel'];
+const nul = t => ({ anyOf: [t, { type: 'null' }] });
+const obj = props => ({ type: 'object', properties: props, required: Object.keys(props), additionalProperties: false });
+const DESIGN_SCHEMA = obj({
+  background: obj({ description: { type: 'string' }, color: { type: 'string' } }),
+  elements: { type: 'array', items: obj({
+    kind: { type: 'string', enum: ['text', 'rect', 'ellipse', 'triangle', 'line'] },
+    name: { type: 'string' },
+    x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
+    rotation: { type: 'number' },
+    text: nul({ type: 'string' }),
+    font: nul({ type: 'string', enum: DESIGN_FONTS }),
+    weight: nul({ type: 'integer', enum: [400, 500, 700, 800, 900] }),
+    italic: { type: 'boolean' },
+    align: { type: 'string', enum: ['left', 'center', 'right'] },
+    letter_spacing: { type: 'number' },
+    line_height: { type: 'number' },
+    fill: obj({ type: { type: 'string', enum: ['solid', 'gradient', 'none'] }, color: { type: 'string' }, color2: nul({ type: 'string' }), angle: { type: 'number' } }),
+    stroke: nul(obj({ color: { type: 'string' }, width: { type: 'number' } })),
+    shadow: nul(obj({ color: { type: 'string' }, blur: { type: 'number' }, offset_x: { type: 'number' }, offset_y: { type: 'number' } })),
+    opacity: { type: 'number' },
+    corner_radius: { type: 'number' },
+  }) },
+});
+const DESIGN_PROMPT = `This is a social-media graphic ({W}×{H} px). It will be rebuilt as editable layers: the photo/background stays a picture, and every piece of designed lettering and every flat graphic shape you list is removed from the picture and redrawn on top.
+
+List, back to front:
+- every piece of designed text (titles, scores, names, dates, captions, small credits). One element per text block; use \n between its lines. Copy the text exactly, including Japanese.
+- flat graphic shapes drawn over the picture: solid or gradient bands, boxes, badges, frames, rules, slanted stripes. A slanted band is a rect with its rotation.
+Leave out anything that is part of the photographed scene (printing on clothes, signs, logos in the photo), emblems/logos that are pictures, and soft lighting (glows, flares, vignettes) that is not a shape - those stay in the picture.
+
+For each element:
+- x, y, w, h: the tight box in pixels of this image, measured before rotation (the box the element would have if turned upright, centred on the same point); rotation in degrees, clockwise positive.
+- text: font = the closest of the listed fonts (condensed bold sans → Bebas Neue / Anton / Oswald / Teko; wide geometric → Montserrat / Russo One; Japanese gothic → Noto Sans JP / Zen Kaku Gothic New, heavy Japanese → Dela Gothic One, Japanese serif → Shippori Mincho, script → Grand Hotel); weight; italic if slanted letters; align; letter_spacing in thousandths of the font size (0 normal); line_height as a multiple of the font size.
+- fill: the colour as #rrggbb; gradient with color2 and its angle (0 = left→right, 90 = top→bottom) when the fill visibly changes colour; none for outline-only text or frames.
+- stroke: outline colour and width in pixels, or null.
+- shadow: drop shadow or glow (glow = offsets 0, a large blur), colour as #rrggbb or rgba(), blur and offsets in pixels, or null.
+- opacity 0–1; corner_radius in pixels for rounded boxes (0 otherwise).
+For shapes, text/font/weight are null, italic false, align "center", letter_spacing 0, line_height 1.
+name: a short Japanese label for the layer (例: タイトル, スコア, 日付, 帯).
+background: a short description and its main colour.`;
 
 const actions = {
   async icList(p, env) {
@@ -168,6 +211,30 @@ const actions = {
     });
     if (stmts.length) await env.DB.batch(stmts);
     return actions.icGetSettings(p, env);
+  },
+  // an SNS graphic → its texts and flat shapes, for rebuilding it as editable layers (Claude vision)
+  async icAnalyzeDesign(p, env) {
+    if (!env.ANTHROPIC_API_KEY) throw new Error('画像からの再現機能はまだ設定されていません（管理者がAPIキーを登録すると使えます）');
+    const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(p.image || ''));
+    if (!m) throw new Error('画像が読めません');
+    if (m[2].length > 4_500_000) throw new Error('画像が大きすぎます');
+    const W = Math.round(+p.width) || 0, H = Math.round(+p.height) || 0;
+    const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+    const res = await client.beta.messages.create({
+      model: 'claude-opus-5-5',
+      max_tokens: 16000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'high', format: { type: 'json_schema', schema: DESIGN_SCHEMA } },
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } },
+        { type: 'text', text: DESIGN_PROMPT.replace('{W}', W).replace('{H}', H) },
+      ] }],
+    });
+    if (res.stop_reason === 'refusal') throw new Error('この画像は解析できませんでした');
+    if (res.stop_reason === 'max_tokens') throw new Error('要素が多すぎて解析しきれませんでした');
+    const text = res.content.find(b => b.type === 'text')?.text || '';
+    try { return JSON.parse(text); } catch (e) { throw new Error('解析結果を読み取れませんでした'); }
   },
   async logout(p, env, who) {
     await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(who.token).run();
