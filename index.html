@@ -2737,10 +2737,60 @@ function personSegmenter() {
   })().catch(e => { SEGMENTER = null; throw e; });
   return SEGMENTER;
 }
+/* MODNet (portrait matting, Apache-2.0) through Transformers.js, loaded once on first use (about 25 MB, cached
+   by the browser). It gives a soft alpha matte of the people in a picture, hair and edges included. */
+let MATTER = null;
+function personMatter() {
+  MATTER ||= (async () => {
+    const T = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/dist/transformers.min.js');
+    const [model, proc] = await Promise.all([T.AutoModel.from_pretrained('Xenova/modnet', { dtype: 'fp32', device: 'wasm' }), T.AutoProcessor.from_pretrained('Xenova/modnet')]);
+    return { T, model, proc };
+  })().catch(e => { MATTER = null; throw e; });
+  return MATTER;
+}
+async function matteOf(c) {
+  const { T, model, proc } = await personMatter(), w = c.width, h = c.height;
+  const image = new T.RawImage(new Uint8ClampedArray(c.getContext('2d').getImageData(0, 0, w, h).data), w, h, 4).rgb();
+  const { pixel_values } = await proc(image);
+  const res = await model({ input: pixel_values }), o = res.output || Object.values(res)[0];
+  const m = await T.RawImage.fromTensor(o[0].mul(255).to('uint8')).resize(w, h);
+  const a = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) a[i] = m.data[i * m.channels] / 255;
+  return a;
+}
+/* a matte → the layer's alpha: pieces not joined to the body go, and so does the faint haze
+   (background texture the matte half-keeps) away from the body */
+function cleanMatte(a, w, h, alpha) {
+  const lab = new Int32Array(w * h), sizes = [0];
+  for (let s0 = 0; s0 < w * h; s0++) {
+    if (a[s0] <= 0.2 || lab[s0]) continue; // pieces are joined through the model's half-sure parts (an elbow)
+    const id = sizes.length, st = [s0]; lab[s0] = id; let n = 0;
+    while (st.length) {
+      const i = st.pop(), x = i % w; n++;
+      for (const j of [x ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) if (j >= 0 && j < w * h && !lab[j] && a[j] > 0.2) { lab[j] = id; st.push(j); }
+    }
+    sizes.push(n);
+  }
+  // the body, and anything big enough to be another person or a limb on its own
+  const top = Math.max(0, ...sizes), keep = new Uint8Array(w * h), big = Math.min(top * 0.15, w * h * 0.01);
+  for (let i = 0; i < w * h; i++) if (lab[i] && sizes[lab[i]] >= big) keep[i] = 1;
+  const near = dilate(keep, w, h, Math.max(3, Math.round(Math.max(w, h) / 150)));
+  let on = 0;
+  for (let i = 0; i < w * h; i++) {
+    const v = keep[i] ? a[i] : near[i] && a[i] > 0.12 ? a[i] : 0;
+    alpha[i] = Math.round(v * 255); if (alpha[i] > 127) on++;
+  }
+  return on > w * h * 0.05;
+}
+async function segmentPerson(c, alpha) {
+  try { if (cleanMatte(await matteOf(c), c.width, c.height, alpha)) return true; }
+  catch (e) { console.warn('MODNet', e); }
+  return segmentPersonMP(c, alpha);
+}
 /* the person in a picture as an alpha map. The model sees 256 px, so the picture is also looked at in
    overlapping tiles (an outstretched arm is then big enough to be seen) and what the tiles agree on is added;
    gaps inside the body (a printed number the model doubts) are filled. */
-async function segmentPerson(c, alpha) {
+async function segmentPersonMP(c, alpha) {
   const w = c.width, h = c.height, seg = await personSegmenter(), sum = new Float32Array(w * h), cnt = new Uint8Array(w * h);
   let prob = sum;
   const run = (sx, sy, sw, sh) => {
@@ -3495,14 +3545,36 @@ async function applyBrush(img, mode, pts, size) {
     }
     wx.putImageData(wd, 0, 0);
   }
-  const opaque = !img.cutOrig && !wx.getImageData(0, 0, nw, nh).data.some((v, i) => i % 4 === 3 && v < 255);
+  await setImagePixels(img, work);
+  busy(false);
+}
+async function setImagePixels(img, work) {
+  const opaque = !img.cutOrig && !work.getContext('2d').getImageData(0, 0, work.width, work.height).data.some((v, i) => i % 4 === 3 && v < 255);
   const pic = await loadImg(work.toDataURL(opaque ? 'image/jpeg' : 'image/png', 0.92));
   const keep = { width: img.width, height: img.height, scaleX: img.scaleX, scaleY: img.scaleY, cropX: img.cropX, cropY: img.cropY };
   img.setElement(pic); img.set(keep);
   if (img.filters?.length) img.applyFilters();
   img.dirty = true; img.setCoords();
-  busy(false);
   canvas.requestRenderAll(); scheduleClips(); S.dirty = true; saveHistory();
+}
+/* one click: the people in an image layer are kept, the rest goes transparent (the picture as it was
+   stays with the layer, so the 元に戻す brush can bring parts back) */
+async function cutPersonLayer(img) {
+  const el = img._originalElement || img.getElement(), nw = el.naturalWidth || el.width, nh = el.naturalHeight || el.height;
+  const work = document.createElement('canvas'); work.width = nw; work.height = nh;
+  const wx = work.getContext('2d'); wx.drawImage(el, 0, 0, nw, nh);
+  busy(true, '人物を切り抜いています…（初回はAIの準備に少しかかります）');
+  try {
+    const wd = wx.getImageData(0, 0, nw, nh), alpha = new Uint8Array(nw * nh);
+    if (!(await segmentPerson(work, alpha))) { busy(false); return toast('人物が見つかりませんでした', 'fa-circle-info', 'text-sky'); }
+    if (!img.cutOrig) img.cutOrig = work.toDataURL('image/jpeg', 0.9);
+    for (let i = 0; i < nw * nh; i++) wd.data[i * 4 + 3] = wd.data[i * 4 + 3] * alpha[i] / 255;
+    wx.putImageData(wd, 0, 0);
+    img.fullBleed = false;
+    await setImagePixels(img, work);
+    busy(false); renderProps();
+    toast('人物を切り抜きました（欠けた所は「元に戻す」ブラシで戻せます）', 'fa-user', 'text-accent', 4000);
+  } catch (e) { busy(false); toast('切り抜けませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot', 5000); }
 }
 canvas.on('mouse:dblclick', e => {
   const base = e.target; if (!base || base.clipTo) return;
@@ -3794,6 +3866,7 @@ function imagePropsHTML(o) {
       (photo ? '<p class="text-[10px] text-slate-500">写真はドラッグで枠の中の位置を、四隅で大きさを調整できます。</p>' : assetSelectHTML('data-asset-pick', slot ? slotKindOf(slot) : 'emblem', '登録済みのエンブレム・ロゴ・スポンサーから選ぶ…')) +
       C.btns([['replaceFile', '<i class="fa-solid fa-upload mr-1"></i>ファイルから差し替え']])) +
     C.sec('fa-paintbrush', 'ブラシで修正',
+      `<button class="mini-btn w-full mb-1" data-act="cutPerson"><i class="fa-solid fa-user mr-1 text-accent"></i>人物を切り抜く（AI・無料）</button>` +
       `<div class="grid grid-cols-3 gap-1">${[['heal', 'fa-wand-magic-sparkles', '周りから埋める'], ['erase', 'fa-eraser', '消す'], ['restore', 'fa-rotate-left', '元に戻す']]
         .filter(([m]) => m !== 'restore' || o.cutOrig)
         .map(([m, ic, l]) => `<button class="mini-btn !px-1 ${BRUSH.mode === m && BRUSH.img === o ? '!bg-accent !text-black' : ''}" data-act="brush:${m}"><i class="fa-solid ${ic} mr-1"></i>${l}</button>`).join('')}</div>` +
@@ -3935,6 +4008,7 @@ function propAction(act) {
   if (a === 'qa') { if (v === 'upload') $('#fileInput').click(); if (v === 'text') addObj(TEXTS.heading()); if (v === 'preview') openPreview(); return; }
   if (a === 'toCraft') { setCenterTab('photocraft', { send: true }); return; }
   if (a === 'brush') { if (o && o.type === 'image') toggleBrush(v, o); return; }
+  if (a === 'cutPerson') { if (o && o.type === 'image') { stopBrush(true); cutPersonLayer(o); } return; }
   if (!o) return;
   switch (a) {
     case 'fillmode': {
