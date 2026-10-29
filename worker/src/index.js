@@ -90,7 +90,8 @@ const obj = props => ({ type: 'object', properties: props, required: Object.keys
 const DESIGN_SCHEMA = obj({
   background: obj({ description: { type: 'string' }, color: { type: 'string' } }),
   elements: { type: 'array', items: obj({
-    kind: { type: 'string', enum: ['text', 'rect', 'ellipse', 'triangle', 'line'] },
+    kind: { type: 'string', enum: ['text', 'image', 'rect', 'ellipse', 'triangle', 'line'] },
+    mask: nul({ type: 'string' }),
     name: { type: 'string' },
     x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
     rotation: { type: 'number' },
@@ -111,9 +112,10 @@ const DESIGN_SCHEMA = obj({
 const DESIGN_PROMPT = `This is a social-media graphic ({W}×{H} px). It will be rebuilt as editable layers: the photo/background stays a picture, and every piece of designed lettering and every flat graphic shape you list is removed from the picture and redrawn on top.
 
 List, back to front:
-- every piece of designed text (titles, scores, names, dates, captions, small credits). One element per text block; use \n between its lines. Copy the text exactly, including Japanese.
-- flat graphic shapes drawn over the picture: solid or gradient bands, boxes, badges, frames, rules, slanted stripes. A slanted band is a rect with its rotation.
-Leave out anything that is part of the photographed scene (printing on clothes, signs, logos in the photo), emblems/logos that are pictures, and soft lighting (glows, flares, vignettes) that is not a shape - those stay in the picture.
+- every piece of designed text (titles, scores, names, dates, captions, small credits). One element per line of text. Where one line mixes styles (a small grey shirt number before a big name, a coloured word in a white title), make each differently styled piece its own element. A paragraph of small body text in one style may stay one element with \n between its lines. Copy the text exactly, including Japanese.
+- images: every emblem, crest, logo, icon, star, badge, sponsor logo, and the main person or subject of the photo. kind "image", with a segmentation mask of it (see mask). Each logo or icon is its own element (three stars = three elements).
+- flat graphic shapes drawn over the picture: solid or gradient bands, boxes, frames, rules, slanted stripes - only when nothing else is printed inside them other than texts you list. A band carrying logos is not a shape (its logos are images, the band stays in the picture). A slanted band is a rect with its rotation.
+Leave out anything that is part of the photographed scene (printing on clothes, signs) and soft lighting (glows, flares, vignettes) - those stay in the picture.
 
 For each element:
 - x, y, w, h: the tight box in pixels of this image, measured before rotation (the box the element would have if turned upright, centred on the same point); rotation in degrees, clockwise positive.
@@ -122,14 +124,15 @@ For each element:
 - stroke: outline colour and width in pixels, or null.
 - shadow: drop shadow or glow (glow = offsets 0, a large blur), colour as #rrggbb or rgba(), blur and offsets in pixels, or null.
 - opacity 0–1; corner_radius in pixels for rounded boxes (0 otherwise).
-For shapes, text/font/weight are null, italic false, align "center", letter_spacing 0, line_height 1.
+For shapes and images, text/font/weight are null, italic false, align "center", letter_spacing 0, line_height 1; images have fill type "none".
+mask (images only, else null): the segmentation mask of the object inside its box, as a base64 PNG (a probability map, 0-255).
 name: a short Japanese label for the layer (例: タイトル, スコア, 日付, 帯).
 background: a short description and its main colour.`;
 
 /* Gemini has no strict schema here: the shape is spelled out, and the answer is tidied by normalizeDesign */
 const GEMINI_SHAPE = `Answer with JSON only, in this shape:
 {"background":{"description":string,"color":"#rrggbb"},
- "elements":[{"kind":"text"|"rect"|"ellipse"|"triangle"|"line","name":string,"box_2d":[ymin,xmin,ymax,xmax],"rotation":number,
+ "elements":[{"kind":"text"|"image"|"rect"|"ellipse"|"triangle"|"line","name":string,"box_2d":[ymin,xmin,ymax,xmax],"rotation":number,"mask":string|null,
    "text":string|null,"font":one of ${JSON.stringify(DESIGN_FONTS)} or null,"weight":400|500|700|800|900|null,"italic":boolean,"align":"left"|"center"|"right",
    "letter_spacing":number,"line_height":number,"fill":{"type":"solid"|"gradient"|"none","color":"#rrggbb","color2":"#rrggbb"|null,"angle":number},
    "stroke":{"color":string,"width":number}|null,"shadow":{"color":string,"blur":number,"offset_x":number,"offset_y":number}|null,"opacity":number,"corner_radius":number}]}
@@ -142,7 +145,8 @@ const gO = (props, req = Object.keys(props)) => ({ type: 'OBJECT', properties: p
 const GEMINI_SCHEMA = gO({
   background: gO({ description: gS('STRING'), color: gS('STRING') }),
   elements: gS('ARRAY', { items: gO({
-    kind: gS('STRING', { enum: ['text', 'rect', 'ellipse', 'triangle', 'line'] }),
+    kind: gS('STRING', { enum: ['text', 'image', 'rect', 'ellipse', 'triangle', 'line'] }),
+    mask: gN('STRING'),
     name: gS('STRING'),
     box_2d: gS('ARRAY', { items: gS('NUMBER') }),
     rotation: gS('NUMBER'),
@@ -234,7 +238,8 @@ function normalizeDesign(d) {
   const num = (v, def) => (Number.isFinite(+v) ? +v : def);
   const col = (v, def) => (typeof v === 'string' && v.trim() ? v.trim() : def);
   const elements = (Array.isArray(d?.elements) ? d.elements : []).map(e => ({
-    kind: ['text', 'rect', 'ellipse', 'triangle', 'line'].includes(e?.kind) ? e.kind : 'rect',
+    kind: ['text', 'image', 'rect', 'ellipse', 'triangle', 'line'].includes(e?.kind) ? e.kind : 'rect',
+    mask: e?.kind === 'image' && typeof e?.mask === 'string' && e.mask.length > 40 && e.mask.length < 400000 ? e.mask : null,
     name: String(e?.name || ''),
     x: num(e?.x, 0), y: num(e?.y, 0), w: num(e?.w, 0), h: num(e?.h, 0), rotation: num(e?.rotation, 0),
     text: e?.text == null ? null : String(e.text),

@@ -2650,24 +2650,77 @@ const hexRGB = c => { const x = new fabric.Color(c || '#000000').getSource(); re
 function elementMask(el, data, W, H, k, mask) {
   const cx = (el.x + el.w / 2) * k, cy = (el.y + el.h / 2) * k, a = -(el.rotation || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
   const sw = (el.stroke?.width || 0) * k, sh = el.shadow ? (el.shadow.blur + Math.max(Math.abs(el.shadow.offset_x), Math.abs(el.shadow.offset_y))) * k * 0.6 : 0;
+  // the box from the analysis can be a little short: texts are searched a good way past it
+  // (along the line, where a short box cuts off the last letters; barely up and down, where the next line is)
   const m = Math.max(4, sw * 2 + sh + Math.min(el.w, el.h) * k * 0.08);
-  const hw = el.w * k / 2 + m, hh = el.h * k / 2 + m;
+  const hw = el.w * k / 2 + m + (el.kind === 'text' ? el.h * k * 0.6 : 0), hh = el.h * k / 2 + m;
   const cols = [];
   if (el.fill?.type !== 'none') { cols.push(hexRGB(el.fill.color)); if (el.fill.color2) { const c1 = hexRGB(el.fill.color), c2 = hexRGB(el.fill.color2); for (let t = 0.25; t < 1; t += 0.25) cols.push(c1.map((v, i) => v + (c2[i] - v) * t)); cols.push(c2); } }
   if (el.stroke) cols.push(hexRGB(el.stroke.color));
   const R = Math.ceil(Math.hypot(hw, hh));
   const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(W - 1, Math.ceil(cx + R)), y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(H - 1, Math.ceil(cy + R));
   const thr = el.kind === 'text' ? 70 : 55;
-  let n = 0, bx0 = Infinity, by0 = Infinity, bx1 = -1, by1 = -1;
+  let n = 0, bx0 = Infinity, by0 = Infinity, bx1 = -1, by1 = -1, inner = 0, other = 0; const idx = [];
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
     const dx = x - cx, dy = y - cy, u = dx * ca - dy * sa, v = dx * sa + dy * ca;
     if (Math.abs(u) > hw || Math.abs(v) > hh) continue;
     const i = (y * W + x) * 4, r = data[i], g = data[i + 1], b = data[i + 2];
-    if (!cols.some(c => Math.hypot(r - c[0], g - c[1], b - c[2]) < thr)) continue;
-    mask[y * W + x] = 1; n++;
+    const hit = cols.some(c => Math.hypot(r - c[0], g - c[1], b - c[2]) < thr);
+    // inside the shape itself: anything not its colour and not already taken out (an unlisted logo, …)
+    if (Math.abs(u) <= el.w * k / 2 && Math.abs(v) <= el.h * k / 2) { inner++; if (!hit && !mask[y * W + x]) other++; }
+    if (!hit) continue;
+    idx.push(y * W + x); n++;
     if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
   }
-  return n ? { n, box: [bx0, by0, bx1, by1] } : null;
+  return n ? { n, idx, box: [bx0, by0, bx1, by1], area: (el.w * k) * (el.h * k), other: inner ? other / inner : 0 } : null;
+}
+/* grow the marked pixels around one element by r (only inside its neighbourhood) */
+function dilateAround(mask, W, H, box, r) {
+  const x0 = Math.max(0, box[0] - r - 1), y0 = Math.max(0, box[1] - r - 1), x1 = Math.min(W, box[2] + r + 2), y1 = Math.min(H, box[3] + r + 2), cw = x1 - x0, ch = y1 - y0;
+  if (cw < 1 || ch < 1 || r < 1) return;
+  const sub = new Uint8Array(cw * ch);
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) sub[y * cw + x] = mask[(y0 + y) * W + x0 + x];
+  const grown = dilate(sub, cw, ch, r);
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (grown[y * cw + x]) mask[(y0 + y) * W + x0 + x] = 1;
+}
+/* an emblem, logo or person cut out of the picture: by its mask, or else by keying out the colour round its edge */
+async function cutOut(el, src, W, H, k) {
+  const x0 = Math.max(0, Math.floor(el.x * k)), y0 = Math.max(0, Math.floor(el.y * k));
+  const w = Math.min(W - x0, Math.ceil(el.w * k)), h = Math.min(H - y0, Math.ceil(el.h * k));
+  if (w < 2 || h < 2) return null;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const cx = c.getContext('2d'); cx.drawImage(src, x0, y0, w, h, 0, 0, w, h);
+  const im = cx.getImageData(0, 0, w, h), d = im.data, alpha = new Uint8Array(w * h);
+  let ok = false;
+  if (el.mask) {
+    try {
+      const mi = await loadImg(el.mask.startsWith('data:') ? el.mask : 'data:image/png;base64,' + el.mask);
+      const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
+      const mx = mc.getContext('2d'); mx.drawImage(mi, 0, 0, w, h);
+      const md = mx.getImageData(0, 0, w, h).data;
+      let on = 0;
+      for (let i = 0; i < w * h; i++) { alpha[i] = md[i * 4] * (md[i * 4 + 3] / 255); if (alpha[i] > 127) on++; }
+      ok = on > w * h * 0.03;
+    } catch (e) { /* a mask that will not decode: key it out instead */ }
+  }
+  if (!ok) {
+    // the colour round the edge, flooded in from the border, is the background
+    const edge = [];
+    for (let x = 0; x < w; x++) edge.push(x, (h - 1) * w + x);
+    for (let y = 0; y < h; y++) edge.push(y * w, y * w + w - 1);
+    const med = [0, 1, 2].map(ch => { const v = edge.map(i => d[i * 4 + ch]).sort((a, b) => a - b); return v[v.length >> 1]; });
+    const far = i => Math.hypot(d[i * 4] - med[0], d[i * 4 + 1] - med[1], d[i * 4 + 2] - med[2]) > 38;
+    const bgk = new Uint8Array(w * h), q = edge.filter(i => !far(i));
+    q.forEach(i => { bgk[i] = 1; });
+    while (q.length) {
+      const i = q.pop(), x = i % w, y = (i / w) | 0;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) if (j >= 0 && !bgk[j] && !far(j)) { bgk[j] = 1; q.push(j); }
+    }
+    for (let i = 0; i < w * h; i++) alpha[i] = bgk[i] ? 0 : 255;
+  }
+  for (let i = 0; i < w * h; i++) d[i * 4 + 3] = alpha[i];
+  cx.putImageData(im, 0, 0);
+  return { canvas: c, x0, y0, w, h, alpha };
 }
 function dilate(mask, W, H, r) {
   if (r < 1) return mask;
@@ -2763,17 +2816,40 @@ async function rebuildFromImage(file) {
     const work = scaled(2160).c, W = work.width, H = work.height, k = W / look.c.width;
     const ctx = work.getContext('2d'), img = ctx.getImageData(0, 0, W, H), data = img.data;
     let mask = new Uint8Array(W * H);
-    const els = (res.elements || []).filter(e => e.w > 1 && e.h > 1);
+    let els = (res.elements || []).filter(e => e.w > 1 && e.h > 1);
     if (!els.length) throw new Error('文字や図形の位置を読み取れませんでした（' + JSON.stringify((res.elements || []).slice(0, 2)).slice(0, 200) + '）');
+    // emblems, logos, the person: cut out of the untouched picture, then taken out of it
+    const untouched = document.createElement('canvas'); untouched.width = W; untouched.height = H; untouched.getContext('2d').drawImage(work, 0, 0);
+    const cuts = new Map();
+    for (const el of els.filter(e => e.kind === 'image')) {
+      const cut = await cutOut(el, untouched, W, H, k); if (!cut) continue;
+      cuts.set(el, cut);
+      let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+      for (let y = 0; y < cut.h; y++) for (let x = 0; x < cut.w; x++) if (cut.alpha[y * cut.w + x] > 60) {
+        const gx = cut.x0 + x, gy = cut.y0 + y; mask[gy * W + gx] = 1;
+        if (gx < x0) x0 = gx; if (gx > x1) x1 = gx; if (gy < y0) y0 = gy; if (gy > y1) y1 = gy;
+      }
+      if (x1 >= 0) dilateAround(mask, W, H, [x0, y0, x1, y1], Math.max(2, Math.round(W / 300)));
+    }
+    els = els.filter(e => e.kind !== 'image' || cuts.has(e));
     els.forEach(el => {
+      if (el.kind === 'image') return;
       const r = elementMask(el, data, W, H, k, mask);
+      // a "band" with other things printed on it stays in the picture (its logos come out as images)
+      if (el.kind !== 'text' && (!r || r.n < r.area * 0.7 || r.other > 0.01)) { el.skip = true; return; }
+      if (r) {
+        r.idx.forEach(i => { mask[i] = 1; });
+        // small letters: their soft edges reach further than the colour test sees
+        if (el.kind === 'text') { const lines = String(el.text || '').split('\n').length; dilateAround(mask, W, H, r.box, Math.max(2, Math.round(el.h * k / lines * 0.12))); }
+      }
       // an upright element takes the box its pixels really fill (the analysis box is approximate)
       if (r && Math.abs(el.rotation || 0) < 1 && r.n > 30) {
         const [x0, y0, x1, y1] = r.box.map(v => v / k), sh = el.shadow ? el.shadow.blur * 0.5 + Math.abs(el.shadow.offset_x) : 0;
         if (!sh) { const nw = x1 - x0 + 1, nh = y1 - y0 + 1; if (nw > el.w * 0.6 && nw < el.w * 1.4 && nh > el.h * 0.6 && nh < el.h * 1.4) Object.assign(el, { x: x0, y: y0, w: nw, h: nh }); }
       }
     });
-    mask = dilate(mask, W, H, Math.max(2, Math.round(W / 400)));
+    els = els.filter(e => !e.skip);
+    mask = dilate(mask, W, H, Math.max(1, Math.round(W / 800)));
     // a shadow or glow spreads around the letters: everything within its reach goes too
     els.forEach(el => {
       if (!el.shadow || el.kind !== 'text') return;
@@ -2793,12 +2869,18 @@ async function rebuildFromImage(file) {
     const sc = Math.max(S.W / W, S.H / H), ox = (S.W - W * sc) / 2, oy = (S.H - H * sc) / 2, s2 = sc * k;
     const t = { s: s2, x: v => ox + v * s2, y: v => oy + v * s2 };
     const bg = new fabric.Image(await loadImg(work.toDataURL('image/jpeg', 0.92)), { name: '背景写真', originX: 'center', originY: 'center', left: S.W / 2, top: S.H / 2, scaleX: sc, scaleY: sc, fullBleed: true });
-    const layers = els.map(el => elementLayer(el, t));
+    const layers = [];
+    for (const el of els) {
+      const cut = cuts.get(el);
+      if (!cut) { layers.push(elementLayer(el, t)); continue; }
+      const pic = await loadImg(cut.canvas.toDataURL('image/png'));
+      layers.push(new fabric.Image(pic, { originX: 'left', originY: 'top', left: ox + cut.x0 * sc, top: oy + cut.y0 * sc, scaleX: sc, scaleY: sc, name: el.name || '画像' }));
+    }
     replaceSlideObjects([bg, ...layers]);
     canvas.getObjects().forEach(o => { if (o.type === 'textbox') o.initDimensions(); });
     canvas.requestRenderAll();
     busy(false);
-    toast(`再現しました：テキスト${els.filter(e => e.kind === 'text').length}・図形${els.filter(e => e.kind !== 'text').length}（レイヤーで編集できます）`, 'fa-wand-magic-sparkles', 'text-accent', 5000);
+    toast(`再現しました：テキスト${els.filter(e => e.kind === 'text').length}・画像${cuts.size}・図形${els.filter(e => e.kind !== 'text' && e.kind !== 'image').length}（レイヤーで編集できます）`, 'fa-wand-magic-sparkles', 'text-accent', 5000);
     showLeftTab('layer');
   } catch (e) {
     busy(false);
