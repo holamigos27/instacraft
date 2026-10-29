@@ -3452,7 +3452,7 @@ canvas.findTarget = function (e, skipGroup) {
   return t;
 };
 /* ---------------- brushes on an image: fill from around, erase, bring back the uncut picture ---------------- */
-const BRUSH = { mode: null, img: null, size: 40, pts: null, keep: null };
+const BRUSH = { mode: null, img: null, size: 40, hard: 80, opacity: 100, flow: 100, pts: null, keep: null };
 function toggleBrush(mode, img) {
   if (BRUSH.mode === mode && BRUSH.img === img) return stopBrush();
   stopBrush(true);
@@ -3496,12 +3496,14 @@ function drawBrush(pt) {
       ox.lineCap = ox.lineJoin = 'round'; ox.lineWidth = BRUSH.size; ox.strokeStyle = '#000';
       ox.beginPath(); BRUSH.pts.forEach((q, i) => i ? ox.lineTo(q.x, q.y) : ox.moveTo(q.x, q.y)); if (BRUSH.pts.length === 1) ox.lineTo(pt.x + 0.01, pt.y); ox.stroke();
       ox.globalCompositeOperation = 'source-in'; drawOrig(ox);
-      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(off, 0, 0); ctx.restore();
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = BRUSH.opacity / 100; ctx.drawImage(off, 0, 0); ctx.restore();
     }
   } else if (BRUSH.pts?.length) {
     ctx.strokeStyle = BRUSH.mode === 'restore' ? 'rgba(80,200,255,.5)' : 'rgba(255,60,110,.5)'; ctx.lineWidth = BRUSH.size;
+    ctx.globalAlpha = Math.max(0.2, BRUSH.opacity / 100); ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = BRUSH.size * (1 - BRUSH.hard / 100) * 0.5 * v[0] * rs;
     ctx.beginPath(); BRUSH.pts.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); if (BRUSH.pts.length === 1) ctx.lineTo(pt.x + 0.01, pt.y); ctx.stroke();
   }
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 / v[0]; ctx.beginPath(); ctx.arc(pt.x, pt.y, BRUSH.size / 2, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
 }
@@ -3528,9 +3530,21 @@ async function applyBrush(img, mode, pts, size) {
   const ip = pts.map(q => { const l = fabric.util.transformPoint(new fabric.Point(q.x, q.y), inv); return { x: (l.x + img.width / 2 + (img.cropX || 0)) * fx, y: (l.y + img.height / 2 + (img.cropY || 0)) * fy }; });
   const rad = size / 2 / scale * fx;
   const sm = document.createElement('canvas'); sm.width = nw; sm.height = nh;
-  const sx = sm.getContext('2d'); sx.strokeStyle = sx.fillStyle = '#fff'; sx.lineCap = sx.lineJoin = 'round'; sx.lineWidth = rad * 2;
-  sx.beginPath(); ip.forEach((q, i) => i ? sx.lineTo(q.x, q.y) : sx.moveTo(q.x, q.y)); if (ip.length === 1) sx.lineTo(ip[0].x + 0.01, ip[0].y); sx.stroke();
-  const md = sx.getImageData(0, 0, nw, nh).data;
+  const sx = sm.getContext('2d'), D = Math.ceil(rad * 2) + 2;
+  const dab = document.createElement('canvas'); dab.width = dab.height = D;
+  const dx = dab.getContext('2d'), g = dx.createRadialGradient(D / 2, D / 2, 0, D / 2, D / 2, rad);
+  g.addColorStop(0, '#fff'); g.addColorStop(Math.min(0.999, BRUSH.hard / 100), '#fff'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  dx.fillStyle = g; dx.fillRect(0, 0, D, D);
+  sx.globalAlpha = BRUSH.flow / 100;
+  const stamp = q => sx.drawImage(dab, q.x - D / 2, q.y - D / 2), step = Math.max(1, rad * 0.2);
+  stamp(ip[0]);
+  for (let i = 1, left = 0; i < ip.length; i++) {
+    const a = ip[i - 1], b = ip[i], len = Math.hypot(b.x - a.x, b.y - a.y);
+    let t = step - left;
+    for (; t <= len; t += step) stamp({ x: a.x + (b.x - a.x) * t / len, y: a.y + (b.y - a.y) * t / len });
+    left = len - (t - step);
+  }
+  const md = sx.getImageData(0, 0, nw, nh).data, opa = BRUSH.opacity / 100;
   let bx0 = nw, by0 = nh, bx1 = -1, by1 = -1;
   for (let y = 0; y < nh; y++) for (let x = 0; x < nw; x++) if (md[(y * nw + x) * 4 + 3] > 20) { if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y; }
   if (bx1 < 0) return toast('画像の上をなぞってください', 'fa-circle-info', 'text-sky');
@@ -3566,7 +3580,7 @@ async function applyBrush(img, mode, pts, size) {
       od = ox.getImageData(0, 0, nw, nh).data;
     }
     for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
-      const i = (y * nw + x) * 4, a = md[i + 3] / 255; if (!a) continue;
+      const i = (y * nw + x) * 4, a = md[i + 3] / 255 * opa; if (!a) continue;
       if (mode === 'erase') d[i + 3] = d[i + 3] * (1 - a);
       else { for (let c = 0; c < 3; c++) d[i + c] = d[i + c] * (1 - a) + od[i + c] * a; d[i + 3] = Math.max(d[i + 3], 255 * a); }
     }
@@ -3897,8 +3911,9 @@ function imagePropsHTML(o) {
       `<div class="grid grid-cols-3 gap-1">${[['heal', 'fa-wand-magic-sparkles', '周りから埋める'], ['erase', 'fa-eraser', '消す'], ['restore', 'fa-rotate-left', '元画像に戻す']]
         .filter(([m]) => m !== 'restore' || o.cutOrig)
         .map(([m, ic, l]) => `<button class="mini-btn !px-1 ${BRUSH.mode === m && BRUSH.img === o ? '!bg-accent !text-black' : ''}" data-act="brush:${m}"><i class="fa-solid ${ic} mr-1"></i>${l}</button>`).join('')}</div>` +
-      `<label class="ctl"><span class="ctl-l">ブラシの太さ<b data-brush-out>${BRUSH.size}px</b></span><input type="range" data-brush-size min="4" max="300" step="1" value="${BRUSH.size}"></label>` +
-      `<p class="text-[10px] text-slate-500 leading-relaxed">ボタンを押してから、画像の上をなぞります。「周りから埋める」は消し残しや不要な物を周りの模様で埋め、「消す」は透明に${o.cutOrig ? '、「元画像に戻す」はなぞった所に元の画像を戻します（なぞると元の画像が見えます）' : 'します'}。Esc か同じボタンで終了。</p>`) +
+      [['size', 'ブラシの太さ', 4, 300, 'px'], ['hard', '硬さ', 0, 100, '%'], ['opacity', '不透明度', 1, 100, '%'], ['flow', '流量', 1, 100, '%']]
+        .map(([k, l, mn, mx, u]) => `<label class="ctl"><span class="ctl-l">${l}<b data-brush-out="${k}">${BRUSH[k]}${u}</b></span><input type="range" data-brush-opt="${k}" data-unit="${u}" min="${mn}" max="${mx}" step="1" value="${BRUSH[k]}"></label>`).join('') +
+      `<p class="text-[10px] text-slate-500 leading-relaxed">ボタンを押してから、画像の上をなぞります。「周りから埋める」は消し残しや不要な物を周りの模様で埋め、「消す」は透明に（硬さ＝ふちのぼかし、不透明度＝1回でかかる最大の濃さ、流量＝なぞるごとに重なる濃さ）${o.cutOrig ? '、「元画像に戻す」はなぞった所に元の画像を戻します（なぞると元の画像が見えます）' : 'します'}。Esc か同じボタンで終了。</p>`) +
     C.sec('fa-palette', 'ロゴ・画像の色を変える',
       C.color('fx_recolor', f.recolor ? '色（透明部分はそのまま）' : '色を選ぶと全体がその色になります', f.recolor || '#ffffff') +
       (f.recolor ? C.btns([['recolorOff', '<i class="fa-solid fa-rotate-left mr-1"></i>元の色に戻す']]) : '')) +
@@ -4092,8 +4107,8 @@ propsEl.addEventListener('input', e => {
   if (e.target.type === 'range') outLabel(k, e.target.value);
 });
 propsEl.addEventListener('input', e => {
-  if (!e.target.matches('[data-brush-size]')) return;
-  BRUSH.size = +e.target.value; const b = propsEl.querySelector('[data-brush-out]'); if (b) b.textContent = BRUSH.size + 'px';
+  const k = e.target.dataset?.brushOpt; if (!k) return;
+  BRUSH[k] = +e.target.value; const b = propsEl.querySelector(`[data-brush-out="${k}"]`); if (b) b.textContent = BRUSH[k] + e.target.dataset.unit;
 });
 propsEl.addEventListener('change', e => { if (e.target.matches('[data-size]')) applySize(e.target.dataset.size, +e.target.value); });
 propsEl.addEventListener('keydown', e => {
@@ -5834,6 +5849,9 @@ async function slideToPSD() {
   await new Promise(r => sc.loadFromJSON(sceneJSON(), r));
   normalizeImageSizes(sc);
   const objs = sc.getObjects(), vis = objs.map(o => o.visible !== false), el = sc.lowerCanvasEl, children = [];
+  // cut-outs: their uncut picture, to go in as the layer's pixels (the cut becomes its mask)
+  const origs = new Map();
+  for (const o of objs) if (o.type === 'image' && o.cutOrig) { const im = await loadImg(o.cutOrig).catch(() => null); if (im) origs.set(o, im); }
   objs.forEach((o, i) => {
     objs.forEach((x, j) => { x.visible = j === i; });
     sc.renderAll();
@@ -5843,7 +5861,25 @@ async function slideToPSD() {
     if (w < 1 || h < 1) return;
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     c.getContext('2d').drawImage(el, l, t, w, h, 0, 0, w, h);
-    children.push({ name: layerTag(canvas.getObjects()[i]), left: l, top: t, canvas: c, hidden: !vis[i] });
+    const layer = { name: layerTag(canvas.getObjects()[i]), left: l, top: t, canvas: c, hidden: !vis[i] };
+    const oi = origs.get(o);
+    if (oi) {
+      // the same layer drawn from the uncut picture; the mask is how much of it the cut-out shows
+      const cut = c.getContext('2d').getImageData(0, 0, w, h).data, keep = o.getElement(), kw = o.width, kh = o.height;
+      o.setElement(oi); o.set({ width: kw, height: kh }); if (o.filters?.length) o.applyFilters();
+      sc.renderAll();
+      const full = document.createElement('canvas'); full.width = w; full.height = h;
+      full.getContext('2d').drawImage(el, l, t, w, h, 0, 0, w, h);
+      o.setElement(keep); o.set({ width: kw, height: kh }); if (o.filters?.length) o.applyFilters();
+      const fd = full.getContext('2d').getImageData(0, 0, w, h).data;
+      const m = document.createElement('canvas'); m.width = w; m.height = h;
+      const mx = m.getContext('2d'), md = mx.createImageData(w, h);
+      for (let p = 0; p < w * h; p++) { const v = fd[p * 4 + 3] ? Math.min(255, Math.round(cut[p * 4 + 3] / fd[p * 4 + 3] * 255)) : 0; md.data[p * 4] = md.data[p * 4 + 1] = md.data[p * 4 + 2] = v; md.data[p * 4 + 3] = 255; }
+      mx.putImageData(md, 0, 0);
+      layer.canvas = full;
+      layer.mask = { top: t, left: l, bottom: t + h, right: l + w, defaultColor: 0, canvas: m };
+    }
+    children.push(layer);
   });
   objs.forEach((x, j) => { x.visible = vis[j]; });
   sc.renderAll();
@@ -5940,7 +5976,22 @@ async function psdToLayers(psd, sent) {
   for (const l of flat) {
     if (!l.canvas || !l.canvas.width || !l.canvas.height) continue; // adjustment / empty layers
     const cid = cidOfTag(l.name), orig = cid && sent?.items?.[cid];
-    const cand = new fabric.Image(l.canvas, { left: l.left || 0, top: l.top || 0, opacity: l.opacity ?? 1, visible: !l.hidden, name: orig ? orig.name : (l.name || 'レイヤー') });
+    let pix = l.canvas, uncut = null;
+    if (l.mask?.canvas && !l.mask.disabled) {
+      uncut = l.canvas.toDataURL('image/jpeg', 0.9);
+      const w = l.canvas.width, h = l.canvas.height, c = document.createElement('canvas'); c.width = w; c.height = h;
+      const cx = c.getContext('2d'); cx.drawImage(l.canvas, 0, 0);
+      const d = cx.getImageData(0, 0, w, h), mk = l.mask, mw = mk.canvas.width, mh = mk.canvas.height;
+      const md = mk.canvas.getContext('2d').getImageData(0, 0, mw, mh).data, def = mk.defaultColor ?? 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const mxp = (l.left || 0) + x - (mk.left || 0), myp = (l.top || 0) + y - (mk.top || 0);
+        const v = mxp >= 0 && myp >= 0 && mxp < mw && myp < mh ? md[(myp * mw + mxp) * 4] : def;
+        d.data[(y * w + x) * 4 + 3] = d.data[(y * w + x) * 4 + 3] * v / 255;
+      }
+      cx.putImageData(d, 0, 0); pix = c;
+    }
+    const cand = new fabric.Image(pix, { left: l.left || 0, top: l.top || 0, opacity: l.opacity ?? 1, visible: !l.hidden, name: orig ? orig.name : (l.name || 'レイヤー') });
+    if (uncut) cand.cutOrig = uncut;
     if (l.blendMode && { multiply: 1, screen: 1, overlay: 1, darken: 1, lighten: 1 }[l.blendMode]) cand.globalCompositeOperation = l.blendMode;
     out.push(await matchLayer(cand, orig));
   }
