@@ -2672,6 +2672,45 @@ function elementMask(el, data, W, H, k, mask) {
     idx.push(y * W + x); n++;
     if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
   }
+  if (el.kind === 'text') {
+    // the paper: the colours on a ring just outside the box (rare ones there are the next line's letters)
+    const lines = Math.max(1, String(el.text || '').split(/\n/).length), lh = el.h * k / lines;
+    const bw = el.w * k / 2 + lh * 0.3, bh = el.h * k / 2 + Math.max(1, lh * 0.08), ring = bh + Math.max(2, lh * 0.15);
+    const ink = hexRGB(el.fill?.color), bins = new Map(); let tot = 0;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const dx = x - cx, dy = y - cy, u = dx * ca - dy * sa, v = dx * sa + dy * ca;
+      if (Math.abs(u) > bw + ring - bh || Math.abs(v) > ring || (Math.abs(u) <= bw && Math.abs(v) <= bh)) continue;
+      const i = (y * W + x) * 4, key = (data[i] >> 4) << 8 | (data[i + 1] >> 4) << 4 | data[i + 2] >> 4;
+      let b = bins.get(key); if (!b) bins.set(key, b = [0, 0, 0, 0]);
+      b[0] += data[i]; b[1] += data[i + 1]; b[2] += data[i + 2]; b[3]++; tot++;
+    }
+    const paper = [...bins.values()].filter(b => b[3] >= tot * 0.04).map(b => [b[0] / b[3], b[1] / b[3], b[2] / b[3]])
+      .filter(c => el.fill?.type === 'none' || Math.hypot(c[0] - ink[0], c[1] - ink[1], c[2] - ink[2]) > 60);
+    if (paper.length) {
+      const seen = new Set(idx), isInk = i => !paper.some(c => Math.hypot(data[i] - c[0], data[i + 1] - c[1], data[i + 2] - c[2]) < 45);
+      // the ink between ua and ub along the line
+      const take = (ua, ub) => {
+        let got = 0;
+        const R2 = Math.ceil(Math.hypot(Math.max(Math.abs(ua), Math.abs(ub)), bh));
+        const X0 = Math.max(0, Math.floor(cx - R2)), X1 = Math.min(W - 1, Math.ceil(cx + R2)), Y0 = Math.max(0, Math.floor(cy - R2)), Y1 = Math.min(H - 1, Math.ceil(cy + R2));
+        for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+          const dx = x - cx, dy = y - cy, u = dx * ca - dy * sa, v = dx * sa + dy * ca;
+          if (u < ua || u > ub || Math.abs(v) > bh) continue;
+          const j = y * W + x; if (!isInk(j * 4)) continue;
+          got++; if (seen.has(j)) continue; seen.add(j);
+          idx.push(j); n++;
+          if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
+        }
+        return got;
+      };
+      take(-bw, bw);
+      // a side whose last strip still has ink is short: it grows strip by strip
+      const st = Math.max(2, lh * 0.15), minInk = Math.max(2, st * bh * 0.03); // narrow strips: a word gap stops it
+      for (const dir of [-1, 1]) for (let e = bw, g = 0; g < 30 && e < el.w * k; g++, e += st) {
+        if (take(dir < 0 ? -e - st : e, dir < 0 ? -e : e + st) < minInk) break;
+      }
+    }
+  }
   return n ? { n, idx, box: [bx0, by0, bx1, by1], area: (el.w * k) * (el.h * k), other: inner ? other / inner : 0 } : null;
 }
 /* grow the marked pixels around one element by r (only inside its neighbourhood) */
@@ -2683,6 +2722,19 @@ function dilateAround(mask, W, H, box, r) {
   const grown = dilate(sub, cw, ch, r);
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (grown[y * cw + x]) mask[(y0 + y) * W + x0 + x] = 1;
 }
+/* MediaPipe's person segmenter (loaded once, on first use) */
+let SEGMENTER = null;
+function personSegmenter() {
+  const V = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  SEGMENTER ||= (async () => {
+    const v = await import(V + '/vision_bundle.mjs'), files = await v.FilesetResolver.forVisionTasks(V + '/wasm');
+    return v.ImageSegmenter.createFromOptions(files, {
+      baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite', delegate: 'CPU' },
+      runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false,
+    });
+  })().catch(e => { SEGMENTER = null; throw e; });
+  return SEGMENTER;
+}
 /* an emblem, logo or person cut out of the picture: by its mask, or else by keying out the colour round its edge */
 async function cutOut(el, src, W, H, k) {
   const x0 = Math.max(0, Math.floor(el.x * k)), y0 = Math.max(0, Math.floor(el.y * k));
@@ -2692,7 +2744,24 @@ async function cutOut(el, src, W, H, k) {
   const cx = c.getContext('2d'); cx.drawImage(src, x0, y0, w, h, 0, 0, w, h);
   const im = cx.getImageData(0, 0, w, h), d = im.data, alpha = new Uint8Array(w * h);
   let ok = false;
-  if (el.mask) {
+  // a person: cut out by a person-segmentation model running in the page (free, no upload)
+  if (el.w * el.h * k * k > W * H * 0.06 || /人|選手|person|player|man|woman|athlete/i.test(el.name || '')) {
+    try {
+      const seg = await personSegmenter(), out = seg.segment(c), bgm = out.confidenceMasks?.[0];
+      if (bgm) {
+        const f = bgm.getAsFloat32Array(), mw = bgm.width, mh = bgm.height;
+        let on = 0;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          const p = 1 - f[Math.min(mh - 1, (y * mh / h) | 0) * mw + Math.min(mw - 1, (x * mw / w) | 0)];
+          const a = Math.max(0, Math.min(1, (p - 0.3) / 0.4)) * 255;
+          alpha[y * w + x] = a; if (a > 127) on++;
+        }
+        ok = on > w * h * 0.08;
+      }
+      out.close?.();
+    } catch (e) { console.warn('person segmentation', e); }
+  }
+  if (!ok && el.mask) {
     try {
       const mi = await loadImg(el.mask.startsWith('data:') ? el.mask : 'data:image/png;base64,' + el.mask);
       const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
@@ -2782,6 +2851,8 @@ function structureFill(img, m, w, h, R) {
     if (ok) src.push(y * w + x);
   }
   if (!src.length) return;
+  // a patch a tenth of the picture away costs as much as a colour error of about 8 on every pixel
+  const near = (2 * R + 1) ** 2 * 192 / (0.1 * Math.max(w, h)) ** 2;
   let left = hole.reduce((a, v) => a + v, 0), guard = 0;
   while (left > 0 && guard++ < 20000) {
     // the fill front and its priorities
@@ -2810,7 +2881,7 @@ function structureFill(img, m, w, h, R) {
     // best source patch for the known part of the target patch
     let bs = -1, bd = Infinity;
     for (const s0 of src) {
-      const sx = s0 % w, sy = (s0 / w) | 0; let d = 0;
+      const sx = s0 % w, sy = (s0 / w) | 0; let d = near * ((sx - px) ** 2 + (sy - py) ** 2);
       for (let oy = -R; oy <= R && d < bd; oy++) for (let ox = -R; ox <= R; ox++) {
         const tx = px + ox, ty = py + oy; if (tx < 0 || ty < 0 || tx >= w || ty >= h) continue;
         const t = ty * w + tx; if (hole[t]) continue;
@@ -2834,19 +2905,44 @@ function structureFill(img, m, w, h, R) {
     }
   }
 }
-async function contentAwareFill(work, fullMask) {
+/* thin holes (letters, small logos) and thick ones (a person) apart: thin ones are filled at full detail from
+   what is right round them, thick ones need the coarse-to-fine pass that carries stripes across */
+function splitHoles(mask, W, H, lim) {
+  const d = new Uint16Array(W * H), big = 65000;
+  for (let i = 0; i < W * H; i++) d[i] = mask[i] ? big : 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (!d[i]) continue; let v = d[i]; if (x) v = Math.min(v, d[i - 1] + 1); if (y) v = Math.min(v, d[i - W] + 1); d[i] = v; }
+  for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) { const i = y * W + x; if (!d[i]) continue; let v = d[i]; if (x < W - 1) v = Math.min(v, d[i + 1] + 1); if (y < H - 1) v = Math.min(v, d[i + W] + 1); d[i] = v; }
+  const thin = new Uint8Array(W * H), thick = new Uint8Array(W * H), seen = new Uint8Array(W * H);
+  for (let s0 = 0; s0 < W * H; s0++) {
+    if (!mask[s0] || seen[s0]) continue;
+    const comp = [s0]; seen[s0] = 1; let mx = 0;
+    for (let q = 0; q < comp.length; q++) {
+      const i = comp[q], x = i % W; if (d[i] > mx) mx = d[i];
+      for (const j of [x ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < W * H && mask[j] && !seen[j]) { seen[j] = 1; comp.push(j); }
+    }
+    const to = mx <= lim ? thin : thick;
+    for (const i of comp) to[i] = 1;
+  }
+  return [thin, thick];
+}
+async function contentAwareFill(work, fullMask, opt = {}) {
   const FW = work.width, FH = work.height, sc = Math.min(1, 900 / Math.max(FW, FH));
   const W = Math.max(8, Math.round(FW * sc)), H = Math.max(8, Math.round(FH * sc));
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const cx = cv.getContext('2d'); cx.drawImage(work, 0, 0, W, H);
   const id = cx.getImageData(0, 0, W, H);
-  const m0 = new Uint8Array(W * H);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    // a pixel is a hole if any full-size pixel under it is
-    const x0 = Math.floor(x / sc), y0 = Math.floor(y / sc), x1 = Math.min(FW, Math.ceil((x + 1) / sc)), y1 = Math.min(FH, Math.ceil((y + 1) / sc));
-    let h = 0; for (let yy = y0; yy < y1 && !h; yy++) for (let xx = x0; xx < x1; xx++) if (fullMask[yy * FW + xx]) { h = 1; break; }
-    m0[y * W + x] = h;
-  }
+  const small = fm => {
+    const m = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      // a pixel is a hole if any full-size pixel under it is
+      const x0 = Math.floor(x / sc), y0 = Math.floor(y / sc), x1 = Math.min(FW, Math.ceil((x + 1) / sc)), y1 = Math.min(FH, Math.ceil((y + 1) / sc));
+      let h = 0; for (let yy = y0; yy < y1 && !h; yy++) for (let xx = x0; xx < x1; xx++) if (fm[yy * FW + xx]) { h = 1; break; }
+      m[y * W + x] = h;
+    }
+    return m;
+  };
+  // the holes, and (for the thin pass) every place no patch may be taken from
+  const m0 = small(fullMask), a0 = opt.avoid ? small(opt.avoid) : null;
   if (!m0.some(v => v)) return;
   const img0 = new Float32Array(W * H * 3);
   for (let i = 0; i < W * H; i++) { img0[i * 3] = id.data[i * 4]; img0[i * 3 + 1] = id.data[i * 4 + 1]; img0[i * 3 + 2] = id.data[i * 4 + 2]; }
@@ -2869,6 +2965,7 @@ async function contentAwareFill(work, fullMask) {
   let prevNN = null, prevW = 0, prevH = 0, prevImg = null;
   // the start: the smallest level that is still about 48 px or more on its short side
   let S = lv.length - 1; while (S > 0 && Math.min(lv[S].w, lv[S].h) < 48) S--;
+  if (opt.fine) S = 0; // thin holes: full detail only, started from the colours right round them
   for (let L = S; L >= 0; L--) {
     const { w, h, img, m } = lv[L];
     // the holes start with lines and edges carried across them (then from the coarser result)
@@ -2877,7 +2974,7 @@ async function contentAwareFill(work, fullMask) {
       for (let i = 0; i < w * h; i++) { tmp[i * 4] = img[i * 3]; tmp[i * 4 + 1] = img[i * 3 + 1]; tmp[i * 4 + 2] = img[i * 3 + 2]; tmp[i * 4 + 3] = 255; }
       inpaint(tmp, m, w, h);
       for (let i = 0; i < w * h; i++) if (m[i]) { img[i * 3] = tmp[i * 4]; img[i * 3 + 1] = tmp[i * 4 + 1]; img[i * 3 + 2] = tmp[i * 4 + 2]; }
-      structureFill(img, m, w, h, 2);
+      if (!opt.fine) structureFill(img, m, w, h, 2);
       await new Promise(res => setTimeout(res, 0));
     } else {
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -2887,19 +2984,24 @@ async function contentAwareFill(work, fullMask) {
       }
     }
     // sources: patch centres whose whole patch is known; targets: centres whose patch touches a hole
-    const ii = new Int32Array((w + 1) * (h + 1));
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ii[(y + 1) * (w + 1) + x + 1] = m[y * w + x] + ii[y * (w + 1) + x + 1] + ii[(y + 1) * (w + 1) + x] - ii[y * (w + 1) + x];
-    const holesIn = (x, y) => ii[(y + R + 1) * (w + 1) + x + R + 1] - ii[(y - R) * (w + 1) + x + R + 1] - ii[(y + R + 1) * (w + 1) + x - R] + ii[(y - R) * (w + 1) + x - R];
+    const integral = mm => {
+      const ii = new Int32Array((w + 1) * (h + 1));
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) ii[(y + 1) * (w + 1) + x + 1] = mm[y * w + x] + ii[y * (w + 1) + x + 1] + ii[(y + 1) * (w + 1) + x] - ii[y * (w + 1) + x];
+      return (x, y) => ii[(y + R + 1) * (w + 1) + x + R + 1] - ii[(y - R) * (w + 1) + x + R + 1] - ii[(y + R + 1) * (w + 1) + x - R] + ii[(y - R) * (w + 1) + x - R];
+    };
+    const holesIn = integral(m), avoidIn = L === 0 && a0 ? integral(a0) : () => 0;
     const valid = new Uint8Array(w * h), srcList = [], tgt = [];
     for (let y = R; y < h - R; y++) for (let x = R; x < w - R; x++) {
       const n = holesIn(x, y);
-      if (!n) { valid[y * w + x] = 1; srcList.push(y * w + x); } else tgt.push(y * w + x);
+      if (n) tgt.push(y * w + x); else if (!avoidIn(x, y)) { valid[y * w + x] = 1; srcList.push(y * w + x); }
     }
     if (!srcList.length || !tgt.length) { prevImg = img; prevW = w; prevH = h; continue; }
     const step = w > 300 ? 2 : 1;
+    // nearby patches are preferred: a patch a tenth of the picture away costs a colour error of about 8
+    const near = Math.ceil((2 * R + 1) / step) ** 2 * 192 / (0.1 * Math.max(w, h)) ** 2;
     const dist = (t, sIdx, best) => {
       const tx = t % w, ty = (t / w) | 0, sx = sIdx % w, sy = (sIdx / w) | 0;
-      let d = 0;
+      let d = near * ((tx - sx) ** 2 + (ty - sy) ** 2);
       for (let oy = -R; oy <= R; oy += step) {
         let a = ((ty + oy) * w + tx - R) * 3, b = ((sy + oy) * w + sx - R) * 3;
         for (let ox = -R; ox <= R; ox += step, a += 3 * step, b += 3 * step) {
@@ -2921,7 +3023,7 @@ async function contentAwareFill(work, fullMask) {
       if (c < 0) c = rnd();
       nn[t] = c; nd[t] = dist(t, c, Infinity);
     }
-    const em = L === S ? 1 : L === 0 ? 3 : 4;
+    const em = opt.fine ? 4 : L === S ? 1 : L === 0 ? 3 : 4;
     const sum = new Float32Array(w * h * 3), cnt = new Float32Array(w * h);
     for (let e = 0; e < em; e++) {
       // PatchMatch: propagation and random search
@@ -2945,7 +3047,7 @@ async function contentAwareFill(work, fullMask) {
         }
         await new Promise(res => setTimeout(res, 0));
       }
-      if (L === S) break; // the start keeps its structure fill
+      if (L === S && !opt.fine) break; // the start keeps its structure fill
       // voting: every hole pixel takes the average of what the patches over it bring
       sum.fill(0); cnt.fill(0);
       for (const t of tgt) {
@@ -2990,7 +3092,7 @@ function elementLayer(el, t) {
     // the size that fills the box: by height first, then the widest line fitted to the width
     let fs = Math.max(8, h / (lines.length * lh * 1.13) * 1.12);
     const probe = new fabric.Text(text, { ...props, fontSize: fs });
-    if (probe.width > 0) { const byW = fs * w / probe.width; fs = Math.max(fs * 0.6, Math.min(fs * 1.5, byW)); }
+    if (probe.width > 0) { const byW = fs * w / probe.width; fs = Math.max(fs * 0.3, Math.min(fs * 1.3, byW)); }
     const box = new fabric.Textbox(text, { ...base, ...props, fontSize: fs, fill: solid, splitByGrapheme: /[\u3040-\u9fff]/.test(text) });
     const wide = new fabric.Text(text, { ...props, fontSize: fs }).width;
     box.set('width', Math.ceil(Math.max(w, wide) + 4)); box.initDimensions();
@@ -3076,7 +3178,9 @@ async function rebuildFromImage(file) {
     });
     busy(true, '背景を作り直しています…（周りの模様から予測しています）');
     await sleep(30);
-    await contentAwareFill(work, mask);
+    const [thin, thick] = splitHoles(mask, W, H, Math.round(Math.max(W, H) * 0.02));
+    await contentAwareFill(work, thin, { fine: true, avoid: mask });
+    await contentAwareFill(work, thick);
     // into the design: the picture covers it, the layers go where they were in the picture
     const sc = Math.max(S.W / W, S.H / H), ox = (S.W - W * sc) / 2, oy = (S.H - H * sc) / 2, s2 = sc * k;
     const t = { s: s2, x: v => ox + v * s2, y: v => oy + v * s2 };
