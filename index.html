@@ -3924,29 +3924,51 @@ function fontNameOf(buf, file) {
   } catch (e) { /* not a font we can read the name of */ }
   return file.name.replace(/\.[^.]+$/, '').slice(0, 80);
 }
-function pickFontFiles() {
+function pickFontFiles(folder) {
   return new Promise(res => {
-    const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = FONT_EXTS.map(x => '.' + x).join(',');
+    const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true;
+    // a folder: every font inside it, subfolders too
+    if (folder) inp.webkitdirectory = true; else inp.accept = FONT_EXTS.map(x => '.' + x).join(',');
     inp.onchange = () => res([...inp.files]); inp.click();
   });
+}
+/* files and folders dropped on the font buttons (folders are read through, subfolders too) */
+async function droppedFiles(dt) {
+  const out = [], entries = [...dt.items].map(i => i.webkitGetAsEntry?.()).filter(Boolean);
+  if (!entries.length) return [...dt.files];
+  const walk = async e => {
+    if (e.isFile) out.push(await new Promise((res, rej) => e.file(res, rej)));
+    else if (e.isDirectory) {
+      const rd = e.createReader();
+      for (;;) { const batch = await new Promise((res, rej) => rd.readEntries(res, rej)); if (!batch.length) break; for (const x of batch) await walk(x); }
+    }
+  };
+  for (const e of entries) await walk(e);
+  return out;
 }
 async function addFontFiles(files, apply) {
   if (!files.length) return;
   if (!REMOTE) return toast('フォントの追加は、CRAQUES HUB から開いた共有モードで使えます', 'fa-circle-info', 'text-sky', 4500);
-  const added = [];
-  for (const file of files) {
+  // from a folder, anything that is not a font (licences, images, .ttc) is passed over
+  const isFont = f => FONT_EXTS.includes(f.name.toLowerCase().split('.').pop());
+  const fonts = files.filter(isFont), skipped = files.length - fonts.length;
+  if (!fonts.length) return toast('.otf / .ttf / .woff / .woff2 のフォントが見つかりませんでした', 'fa-circle-info', 'text-sky', 4500);
+  const added = [], known = new Set([...CUSTOM_FONTS.values()].map(f => f.file + ':' + f.size));
+  let k = 0;
+  for (const file of fonts) {
+    k++;
+    if (known.has(file.name + ':' + file.size)) continue; // already in the list
     const ext = file.name.toLowerCase().split('.').pop();
-    if (!FONT_EXTS.includes(ext)) { toast(`${file.name}：.otf / .ttf / .woff / .woff2 のフォントを選んでください`, 'fa-circle-info', 'text-sky', 4000); continue; }
     if (file.size > 40e6) { toast(`${file.name}：40MBまでのフォントにしてください`, 'fa-circle-info', 'text-sky', 4000); continue; }
     try {
-      busy(true, `フォントを確認しています… ${file.name}`);
+      busy(true, `フォントを確認しています… ${file.name}${fonts.length > 1 ? `（${k}/${fonts.length}）` : ''}`);
       const buf = await file.arrayBuffer(), family = fontNameOf(buf, file);
       // the browser must be able to use it before it is shared
       const face = new FontFace(family, buf); await face.load();
       const id = 'f' + [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
       const CH = 1_500_000, n = Math.ceil(buf.byteLength / CH);
       for (let i = 0; i < n; i++) {
-        busy(true, `フォントを共有しています… ${family}（${i + 1}/${n}）`);
+        busy(true, `フォントを共有しています… ${family}${fonts.length > 1 ? `（${k}/${fonts.length}本目）` : ''}${n > 1 ? `　${i + 1}/${n}` : ''}`);
         await api('icSaveFontChunk', { id, idx: i, data: bytesToB64(new Uint8Array(buf, i * CH, Math.min(CH, buf.byteLength - i * CH))) });
       }
       const f = await api('icAddFont', { id, family, file: file.name, size: buf.byteLength, chunks: n });
@@ -3954,11 +3976,12 @@ async function addFontFiles(files, apply) {
     } catch (e) { toast(`${file.name}：追加できませんでした（${e.message}）`, 'fa-triangle-exclamation', 'text-hot', 5000); }
   }
   busy(false);
-  if (!added.length) return;
+  if (skipped && fonts.length) toast(`フォント以外のファイル${skipped}個は飛ばしました`, 'fa-circle-info', 'text-sky', 3500);
+  if (!added.length) return toast('新しく追加するフォントはありませんでした（すべて追加済みです）', 'fa-circle-info', 'text-sky', 4000);
   // one font added while texts are selected: they take it
   if (apply && added.length === 1) setProp('fontFamily', added[0]);
   renderProps();
-  toast(`フォントを追加しました：${added.join('、')}（チーム全員のフォント一覧に出ます）`, 'fa-font', 'text-accent', 5000);
+  toast(`フォントを${added.length}本追加しました：${added.slice(0, 6).join('、')}${added.length > 6 ? ' ほか' : ''}（チーム全員のフォント一覧に出ます）`, 'fa-font', 'text-accent', 5000);
 }
 async function deleteFont(id) {
   const f = [...CUSTOM_FONTS.values()].find(x => x.id === id); if (!f) return;
@@ -3973,7 +3996,8 @@ async function deleteFont(id) {
 function fontPickerHTML(label, value) {
   const mine = [...CUSTOM_FONTS.values()];
   return C.select('fontFamily', label, FONTS.map(f => [f, CUSTOM_FONTS.has(f) ? f + '（追加）' : f]), value) +
-    `<button class="mini-btn w-full" data-act="addFont"><i class="fa-solid fa-plus mr-1 text-accent"></i>フォントを追加（.otf .ttf .woff .woff2・複数可）</button>` +
+    `<div class="grid grid-cols-2 gap-1" data-font-drop><button class="mini-btn" data-act="addFont"><i class="fa-solid fa-plus mr-1 text-accent"></i>ファイルから追加</button><button class="mini-btn" data-act="addFontDir"><i class="fa-solid fa-folder-open mr-1 text-accent"></i>フォルダごと追加</button></div>` +
+    `<p class="text-[10px] text-slate-500 leading-relaxed">.otf .ttf .woff .woff2 に対応。複数のファイルやフォルダを、このボタンの上にドラッグ＆ドロップしても追加できます。</p>` +
     (mine.length ? `<details class="text-[11px] text-slate-400"><summary class="cursor-pointer select-none">追加したフォント（${mine.length}）</summary><div class="mt-1 space-y-1">${mine.map(f =>
       `<div class="flex items-center gap-2"><span class="flex-1 truncate" style="font-family:'${esc(f.family).replace(/'/g, '')}'">${esc(f.family)}</span><span class="text-slate-500">${(f.size / 1e6).toFixed(1)}MB</span><button class="mini-btn !px-1.5" data-act="delFont:${f.id}" title="一覧から消す"><i class="fa-solid fa-xmark"></i></button></div>`).join('')}</div></details>` : '');
 }
@@ -4161,6 +4185,7 @@ function propAction(act) {
   if (a === 'brush') { if (o && o.type === 'image') toggleBrush(v, o); return; }
   if (a === 'cutPerson') { if (o && o.type === 'image') { stopBrush(true); cutPersonLayer(o); } return; }
   if (a === 'addFont') { pickFontFiles().then(f => addFontFiles(f, !!o)); return; }
+  if (a === 'addFontDir') { pickFontFiles(true).then(f => addFontFiles(f, false)); return; }
   if (a === 'delFont') { deleteFont(v); return; }
   if (!o) return;
   switch (a) {
@@ -4220,6 +4245,13 @@ propsEl.addEventListener('input', e => {
 propsEl.addEventListener('input', e => {
   const k = e.target.dataset?.brushOpt; if (!k) return;
   BRUSH[k] = +e.target.value; const b = propsEl.querySelector(`[data-brush-out="${k}"]`); if (b) b.textContent = BRUSH[k] + e.target.dataset.unit;
+});
+propsEl.addEventListener('dragover', e => { const z = e.target.closest('[data-font-drop]'); if (!z) return; e.preventDefault(); e.stopPropagation(); z.classList.add('ring-2', 'ring-accent', 'rounded'); });
+propsEl.addEventListener('dragleave', e => { const z = e.target.closest('[data-font-drop]'); if (z && !z.contains(e.relatedTarget)) z.classList.remove('ring-2', 'ring-accent', 'rounded'); });
+propsEl.addEventListener('drop', async e => {
+  const z = e.target.closest('[data-font-drop]'); if (!z) return;
+  e.preventDefault(); e.stopPropagation(); z.classList.remove('ring-2', 'ring-accent', 'rounded');
+  addFontFiles(await droppedFiles(e.dataTransfer), false);
 });
 propsEl.addEventListener('change', e => { if (e.target.matches('[data-size]')) applySize(e.target.dataset.size, +e.target.value); });
 propsEl.addEventListener('keydown', e => {
