@@ -1662,6 +1662,8 @@ function fitNoWrap(o) {
   o.set('fontSize', Math.max(4, Math.min(base, base * (o.width - 2) / Math.max(1, w))));
   o.initDimensions(); o.setCoords();
 }
+const TEXT_EXIT = { at: 0 };
+canvas.on('text:editing:exited', () => { TEXT_EXIT.at = Date.now(); });
 function textEdited(o) { if (o && CUR.kind === 'post') o.tpl = hasPlaceholder(o.text) ? o.text : null; }
 canvas.on('selection:created', onSel);
 canvas.on('selection:updated', onSel);
@@ -5545,7 +5547,7 @@ function captureSlide() {
   // in a preset, texts with {placeholders} become templates filled from each post's info
   if (CUR.kind === 'preset') canvas.getObjects().forEach(o => { if (o.type === 'textbox') o.tpl = hasPlaceholder(o.text) ? o.text : null; });
   s.state = snapshot();
-  s.thumb = renderDataURL(180, 'jpeg', 0.75);
+  s.thumb = renderDataURL(180, 'jpeg', 0.75, { keepEditing: true });
 }
 async function loadSlide(i, { skipCapture = false, quiet = false } = {}) {
   const post = CUR.post; if (!post || !post.slides[i]) return;
@@ -5716,10 +5718,11 @@ strip.addEventListener('drop', e => {
 });
 
 /* ---------------- rendering slides offscreen ---------------- */
-function renderDataURL(widthPx, format = 'png', quality = 1) {
+function renderDataURL(widthPx, format = 'png', quality = 1, { keepEditing = false } = {}) {
   S.exporting = true;
+  // an export ends text editing; the autosave's thumbnail must not (typing would stop mid-word)
   const active = canvas.getActiveObject();
-  if (active && active.isEditing) active.exitEditing();
+  if (active && active.isEditing && !keepEditing) active.exitEditing();
   const url = canvas.toDataURL({ format, quality, multiplier: widthPx / (S.W * S.zoom), left: S.offX, top: S.offY, width: S.W * S.zoom, height: S.H * S.zoom });
   S.exporting = false;
   return url;
@@ -7072,7 +7075,11 @@ document.addEventListener('keydown', e => {
   if (mod && e.key.toLowerCase() === 'x' && o) { e.preventDefault(); copySelection(true); return; }
   // Ctrl+V arrives as a paste event (so an image copied from elsewhere still wins)
   if (!o) return;
-  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); objOp('del'); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    e.preventDefault();
+    if (e.repeat || Date.now() - TEXT_EXIT.at < 1500) return; // a held key, or still deleting letters of a text just left
+    objOp('del'); return;
+  }
   const step = e.shiftKey ? 10 : 1;
   const mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
   if (mv && !o.locked) { e.preventDefault(); o.set({ left: o.left + mv[0], top: o.top + mv[1] }); o.setCoords(); scheduleClips(); canvas.requestRenderAll(); markDirty(o); saveHistory(); }
