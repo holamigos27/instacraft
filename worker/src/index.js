@@ -8,6 +8,16 @@ import Anthropic from '@anthropic-ai/sdk';
 const SESSION_MS = 14 * 24 * 3600 * 1000;
 const MAX_DOC_CHARS = 1_900_000; // D1 keeps rows up to 2 MB
 const MAX_IMAGE_BYTES = 1_950_000;
+/* fonts the team adds (.otf .ttf .woff .woff2): a Japanese font is often 5-20 MB, more than a D1 row holds,
+   so a file is stored in chunks and put together again when it is served */
+const MAX_FONT_BYTES = 40_000_000, FONT_CHUNK_BYTES = 1_500_000;
+const FONT_MIME = { otf: 'font/otf', ttf: 'font/ttf', woff: 'font/woff', woff2: 'font/woff2' };
+let fontTables = null;
+const ensureFontTables = env => (fontTables ||= env.DB.batch([
+  env.DB.prepare('CREATE TABLE IF NOT EXISTS fonts (id TEXT PRIMARY KEY, family TEXT NOT NULL, file TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, chunks INTEGER NOT NULL, created_at INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL DEFAULT \'\')'),
+  env.DB.prepare('CREATE TABLE IF NOT EXISTS font_chunks (id TEXT NOT NULL, idx INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (id, idx))'),
+]).catch(e => { fontTables = null; throw e; }));
+const fontId = v => { const id = String(v || ''); if (!/^f[0-9a-f]{40}$/.test(id)) throw new Error('フォントの指定が正しくありません'); return id; };
 const SETTING_NAMES = ['team', 'types', 'tagGroups', 'infoFields', 'mentions', 'assets', 'blocks', 'masters'];
 const KINDS = new Set(['post', 'preset']);
 const MAKE_HOOK = /^https:\/\/hook\.[a-z0-9-]+\.make\.com\/[A-Za-z0-9_-]+$/;
@@ -339,6 +349,40 @@ const actions = {
     await env.DB.prepare('INSERT OR IGNORE INTO images (id, mime, data, created_at) VALUES (?,?,?,?)').bind(id, m[1], bytes, Date.now()).run();
     return { url: `${base}/img/${id}` };
   },
+  // a font arrives in chunks (each under a D1 row), then is registered once all are there
+  async icSaveFontChunk(p, env) {
+    await ensureFontTables(env);
+    const id = fontId(p.id), idx = Math.floor(+p.idx);
+    if (!(idx >= 0 && idx < Math.ceil(MAX_FONT_BYTES / FONT_CHUNK_BYTES))) throw new Error('フォントが大きすぎます');
+    const bytes = Uint8Array.from(atob(String(p.data || '')), c => c.charCodeAt(0));
+    if (!bytes.length || bytes.length > FONT_CHUNK_BYTES) throw new Error('フォントの分割が正しくありません');
+    await env.DB.prepare('INSERT OR REPLACE INTO font_chunks (id, idx, data) VALUES (?,?,?)').bind(id, idx, bytes).run();
+    return { ok: true };
+  },
+  async icAddFont(p, env, who, base) {
+    await ensureFontTables(env);
+    const id = fontId(p.id), ext = String(p.file || '').toLowerCase().split('.').pop();
+    const mime = FONT_MIME[ext]; if (!mime) throw new Error('.otf / .ttf / .woff / .woff2 のフォントを選んでください');
+    const family = String(p.family || '').trim().slice(0, 80); if (!family) throw new Error('フォント名がありません');
+    const size = Math.floor(+p.size), chunks = Math.floor(+p.chunks);
+    if (!(size > 0 && size <= MAX_FONT_BYTES) || chunks !== Math.ceil(size / FONT_CHUNK_BYTES)) throw new Error('フォントの大きさが正しくありません');
+    const got = await env.DB.prepare('SELECT COUNT(*) AS n, SUM(LENGTH(data)) AS b FROM font_chunks WHERE id = ?').bind(id).first();
+    if (got.n !== chunks || got.b !== size) throw new Error('フォントの送信が途中で止まりました。もう一度お試しください');
+    await env.DB.prepare('INSERT INTO fonts (id, family, file, mime, size, chunks, created_at, created_by) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET family = excluded.family, file = excluded.file')
+      .bind(id, family, String(p.file).slice(0, 120), mime, size, chunks, Date.now(), who.name || '').run();
+    return { id, family, file: p.file, size, url: `${base}/font/${id}` };
+  },
+  async icListFonts(p, env, who, base) {
+    await ensureFontTables(env);
+    const { results } = await env.DB.prepare('SELECT id, family, file, size, created_by FROM fonts ORDER BY family').all();
+    return results.map(f => ({ ...f, url: `${base}/font/${f.id}` }));
+  },
+  async icDeleteFont(p, env) {
+    await ensureFontTables(env);
+    const id = fontId(p.id);
+    await env.DB.batch([env.DB.prepare('DELETE FROM fonts WHERE id = ?').bind(id), env.DB.prepare('DELETE FROM font_chunks WHERE id = ?').bind(id)]);
+    return { deleted: true };
+  },
   async icGetSettings(p, env) {
     const { results } = await env.DB.prepare('SELECT key, value FROM settings').all();
     // keys starting with "_" are server-side only (the Make webhook)
@@ -423,6 +467,21 @@ async function rpc(req, env, cors) {
   }
 }
 
+async function font(req, env, ctx, id) {
+  const head = { 'Access-Control-Allow-Origin': '*' };
+  if (!/^f[0-9a-f]{40}$/.test(id)) return new Response('not found', { status: 404, headers: head });
+  const cache = caches.default, hit = await cache.match(req);
+  if (hit) return hit;
+  await ensureFontTables(env);
+  const f = await env.DB.prepare('SELECT mime, size, chunks FROM fonts WHERE id = ?').bind(id).first();
+  if (!f) return new Response('not found', { status: 404, headers: head });
+  const { results } = await env.DB.prepare('SELECT data FROM font_chunks WHERE id = ? ORDER BY idx').bind(id).all();
+  const out = new Uint8Array(f.size); let at = 0;
+  for (const c of results) { const b = new Uint8Array(c.data); out.set(b, at); at += b.length; }
+  const res = new Response(out, { headers: { ...head, 'Content-Type': f.mime, 'Cache-Control': 'public, max-age=31536000, immutable' } });
+  ctx.waitUntil(cache.put(req, res.clone()));
+  return res;
+}
 async function image(req, env, ctx, id) {
   id = id.replace(/\.(jpe?g|png|webp)$/, '');
   if (!/^ic[0-9a-f]{40}$/.test(id)) return new Response('not found', { status: 404 });
@@ -444,6 +503,7 @@ export default {
     const cors = corsFor(req, env);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     if (req.method === 'GET' && url.pathname.startsWith('/img/')) return image(req, env, ctx, url.pathname.slice(5));
+    if (req.method === 'GET' && url.pathname.startsWith('/font/')) return font(req, env, ctx, url.pathname.slice(6));
     if (req.method === 'POST' && url.pathname === '/auth') return auth(req, env, cors);
     if (req.method === 'POST' && url.pathname === '/rpc') return rpc(req, env, cors);
     if (url.pathname === '/') return json({ service: 'instaCRAFT API', ok: true }, {}, cors);

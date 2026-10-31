@@ -1288,6 +1288,7 @@ function queueSharedSetting(k, v) {
   }, 800);
 }
 async function loadSharedSettings() {
+  loadCustomFonts();
   const st = await api('icGetSettings') || {};
   const now = { team: S.team, types: TYPES, tagGroups, infoFields, mentions, assets: ASSETS, blocks: BLOCKS, masters: MASTERS };
   if (st.team) Object.assign(S.team, st.team);
@@ -3876,12 +3877,112 @@ $('#obOpacity').addEventListener('input', e => {
   canvas.requestRenderAll(); markDirty(o); saveHistory();
 });
 canvas.on('object:rotating', syncObjBar);
+/* ---------------- fonts the team adds (.otf .ttf .woff .woff2) ----------------
+   Kept on the instaCRAFT server and shared by everyone; a font is downloaded only when a text uses it. */
+const CUSTOM_FONTS = new Map(); // family → { id, url, file, size, face }
+const FONT_EXTS = ['otf', 'ttf', 'woff', 'woff2'];
+function registerFont(f, face) {
+  if (CUSTOM_FONTS.has(f.family)) return;
+  face ||= new FontFace(f.family, `url(${f.url})`);
+  document.fonts.add(face);
+  CUSTOM_FONTS.set(f.family, { ...f, face });
+  if (!FONTS.includes(f.family)) FONTS.push(f.family);
+}
+function ensureFont(family) {
+  const f = CUSTOM_FONTS.get(family);
+  if (f && f.face.status === 'unloaded') f.face.load().catch(() => toast(`フォント「${family}」を読み込めませんでした`, 'fa-triangle-exclamation', 'text-hot'));
+}
+const ensureFontsOf = o => { if (o?.fontFamily) ensureFont(o.fontFamily); (o?._objects || []).forEach(ensureFontsOf); };
+canvas.on('object:added', e => ensureFontsOf(e.target));
+async function loadCustomFonts() {
+  if (!REMOTE) return;
+  try {
+    (await api('icListFonts')).forEach(f => registerFont(f));
+    canvas.getObjects().forEach(ensureFontsOf);
+    if (canvas.getActiveObject()) renderProps();
+  } catch (e) { console.warn('fonts', e); }
+}
+/* the name a font file gives itself (its full name, Japanese first), else the file's name */
+function fontNameOf(buf, file) {
+  try {
+    const v = new DataView(buf), tag = v.getUint32(0);
+    if (tag === 0x00010000 || tag === 0x4F54544F || tag === 0x74727565) {
+      let at = -1;
+      for (let i = 0, n = v.getUint16(4); i < n; i++) if (v.getUint32(12 + i * 16) === 0x6E616D65) at = v.getUint32(12 + i * 16 + 8);
+      if (at >= 0) {
+        const count = v.getUint16(at + 2), str = at + v.getUint16(at + 4), got = {};
+        for (let i = 0; i < count; i++) {
+          const q = at + 6 + i * 12, pid = v.getUint16(q), lid = v.getUint16(q + 4), nid = v.getUint16(q + 6), len = v.getUint16(q + 8), off = v.getUint16(q + 10);
+          if (pid !== 3 || ![1, 4, 16].includes(nid)) continue;
+          let t = ''; for (let j = 0; j + 1 < len; j += 2) t += String.fromCharCode(v.getUint16(str + off + j));
+          got[nid + (lid === 0x411 ? 'ja' : lid === 0x409 ? 'en' : 'x')] ||= t.trim();
+        }
+        const best = got['4ja'] || got['4en'] || got['4x'] || got['16ja'] || got['1ja'] || got['16en'] || got['1en'];
+        if (best) return best.slice(0, 80);
+      }
+    }
+  } catch (e) { /* not a font we can read the name of */ }
+  return file.name.replace(/\.[^.]+$/, '').slice(0, 80);
+}
+function pickFontFiles() {
+  return new Promise(res => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = FONT_EXTS.map(x => '.' + x).join(',');
+    inp.onchange = () => res([...inp.files]); inp.click();
+  });
+}
+async function addFontFiles(files, apply) {
+  if (!files.length) return;
+  if (!REMOTE) return toast('フォントの追加は、CRAQUES HUB から開いた共有モードで使えます', 'fa-circle-info', 'text-sky', 4500);
+  const added = [];
+  for (const file of files) {
+    const ext = file.name.toLowerCase().split('.').pop();
+    if (!FONT_EXTS.includes(ext)) { toast(`${file.name}：.otf / .ttf / .woff / .woff2 のフォントを選んでください`, 'fa-circle-info', 'text-sky', 4000); continue; }
+    if (file.size > 40e6) { toast(`${file.name}：40MBまでのフォントにしてください`, 'fa-circle-info', 'text-sky', 4000); continue; }
+    try {
+      busy(true, `フォントを確認しています… ${file.name}`);
+      const buf = await file.arrayBuffer(), family = fontNameOf(buf, file);
+      // the browser must be able to use it before it is shared
+      const face = new FontFace(family, buf); await face.load();
+      const id = 'f' + [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
+      const CH = 1_500_000, n = Math.ceil(buf.byteLength / CH);
+      for (let i = 0; i < n; i++) {
+        busy(true, `フォントを共有しています… ${family}（${i + 1}/${n}）`);
+        await api('icSaveFontChunk', { id, idx: i, data: bytesToB64(new Uint8Array(buf, i * CH, Math.min(CH, buf.byteLength - i * CH))) });
+      }
+      const f = await api('icAddFont', { id, family, file: file.name, size: buf.byteLength, chunks: n });
+      registerFont(f, face); added.push(f.family);
+    } catch (e) { toast(`${file.name}：追加できませんでした（${e.message}）`, 'fa-triangle-exclamation', 'text-hot', 5000); }
+  }
+  busy(false);
+  if (!added.length) return;
+  // one font added while texts are selected: they take it
+  if (apply && added.length === 1) setProp('fontFamily', added[0]);
+  renderProps();
+  toast(`フォントを追加しました：${added.join('、')}（チーム全員のフォント一覧に出ます）`, 'fa-font', 'text-accent', 5000);
+}
+async function deleteFont(id) {
+  const f = [...CUSTOM_FONTS.values()].find(x => x.id === id); if (!f) return;
+  if (!confirm(`フォント「${f.family}」を一覧から消しますか？（使っているデザインは別のフォントで表示されます）`)) return;
+  try {
+    await api('icDeleteFont', { id });
+    document.fonts.delete(f.face); CUSTOM_FONTS.delete(f.family);
+    const i = FONTS.indexOf(f.family); if (i >= 0) FONTS.splice(i, 1);
+    renderProps(); toast(`フォント「${f.family}」を消しました`, 'fa-trash');
+  } catch (e) { toast('消せませんでした：' + e.message, 'fa-triangle-exclamation', 'text-hot'); }
+}
+function fontPickerHTML(label, value) {
+  const mine = [...CUSTOM_FONTS.values()];
+  return C.select('fontFamily', label, FONTS.map(f => [f, CUSTOM_FONTS.has(f) ? f + '（追加）' : f]), value) +
+    `<button class="mini-btn w-full" data-act="addFont"><i class="fa-solid fa-plus mr-1 text-accent"></i>フォントを追加（.otf .ttf .woff .woff2・複数可）</button>` +
+    (mine.length ? `<details class="text-[11px] text-slate-400"><summary class="cursor-pointer select-none">追加したフォント（${mine.length}）</summary><div class="mt-1 space-y-1">${mine.map(f =>
+      `<div class="flex items-center gap-2"><span class="flex-1 truncate" style="font-family:'${esc(f.family).replace(/'/g, '')}'">${esc(f.family)}</span><span class="text-slate-500">${(f.size / 1e6).toFixed(1)}MB</span><button class="mini-btn !px-1.5" data-act="delFont:${f.id}" title="一覧から消す"><i class="fa-solid fa-xmark"></i></button></div>`).join('')}</div></details>` : '');
+}
 function textPropsHTML(o) {
   const shd = o.shadow;
   const bgMode = o.backgroundColor ? 'box' : (o.textBackgroundColor ? 'line' : 'none');
   return C.sec('fa-font', 'テキスト',
       `<textarea class="field !text-[12px] resize-none select-text" rows="2" data-k="text">${esc(o.text)}</textarea>` +
-      C.select('fontFamily', 'フォント', FONTS.map(f => [f, f]), o.fontFamily) +
+      fontPickerHTML('フォント', o.fontFamily) +
       `<div class="grid grid-cols-2 gap-2">${C.select('fontWeight', '太さ', [[400, 'Regular'], [500, 'Medium'], [700, 'Bold'], [800, 'ExtraBold'], [900, 'Black']], o.fontWeight)}
        <div class="ctl"><span class="ctl-l">スタイル</span>${C.seg([['italic', '<i class="fa-solid fa-italic"></i>', o.fontStyle === 'italic'], ['under', '<i class="fa-solid fa-underline"></i>', o.underline]])}</div></div>`) +
     C.sec('fa-text-height', 'サイズ・配置',
@@ -3977,7 +4078,11 @@ function groupPropsHTML(o) {
     C.btns([['ungroup', '<i class="fa-solid fa-object-ungroup mr-1"></i>グループ解除']]));
 }
 function multiPropsHTML(o) {
-  return C.sec('fa-object-group', `複数選択（${o.size()}個）`,
+  const texts = [];
+  const walk = list => list.forEach(x => { if (x.type === 'textbox' || x.type === 'text' || x.type === 'i-text') texts.push(x); if (x._objects) walk(x._objects); });
+  walk(o.getObjects());
+  return (texts.length ? C.sec('fa-font', `フォント（選択中の文字 ${texts.length}個）`, fontPickerHTML('まとめて変更', texts[0].fontFamily)) : '') +
+    C.sec('fa-object-group', `複数選択（${o.size()}個）`,
     C.btns([['group', '<i class="fa-solid fa-object-group mr-1"></i>グループ化']]) +
     `<p class="text-[10px] text-slate-500 leading-relaxed">整列・反転・回転・不透明度は、キャンバス上部のバーから操作できます（複数選択時は選択範囲を基準に揃えます）。</p>`);
 }
@@ -4003,7 +4108,11 @@ function setProp(k, v) {
   if (k === 'slotKind') { setSlotKind(o, v); return; }
   switch (k) {
     case 'text': o.set('text', v); textEdited(o); fitNoWrap(o); refreshLayersSoon(); break;
-    case 'fontFamily': o.set('fontFamily', v); break;
+    case 'fontFamily': {
+      ensureFont(v);
+      const set = x => { if (x.type === 'textbox' || x.type === 'text' || x.type === 'i-text') { x.set('fontFamily', v); x.initDimensions?.(); x.dirty = true; } (x._objects || []).forEach(set); };
+      set(o); break;
+    }
     case 'fontWeight': o.set('fontWeight', +v); break;
     case 'fontSize': o.set('fontSize', +v); if (o.noWrap) { o.fitBase = +v; fitNoWrap(o); } break;
     case 'noWrap': o.noWrap = !!v; if (v) { o.fitBase = o.fontSize; fitNoWrap(o); } else if (o.fitBase) { o.set('fontSize', o.fitBase); o.initDimensions(); } renderProps(); break;
@@ -4051,6 +4160,8 @@ function propAction(act) {
   if (a === 'toCraft') { setCenterTab('photocraft', { send: true }); return; }
   if (a === 'brush') { if (o && o.type === 'image') toggleBrush(v, o); return; }
   if (a === 'cutPerson') { if (o && o.type === 'image') { stopBrush(true); cutPersonLayer(o); } return; }
+  if (a === 'addFont') { pickFontFiles().then(f => addFontFiles(f, !!o)); return; }
+  if (a === 'delFont') { deleteFont(v); return; }
   if (!o) return;
   switch (a) {
     case 'fillmode': {

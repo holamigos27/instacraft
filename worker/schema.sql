@@ -29,3 +29,19 @@ CREATE TABLE IF NOT EXISTS used_tickets (
   jti TEXT PRIMARY KEY,
   exp INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS fonts (
+  id TEXT PRIMARY KEY,             -- f + sha256(file) prefix
+  family TEXT NOT NULL,            -- the name it is used by in designs
+  file TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  chunks INTEGER NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS font_chunks (
+  id TEXT NOT NULL,                -- the font's id
+  idx INTEGER NOT NULL,            -- a font is kept in chunks of up to 1.5 MB (a D1 row holds 2 MB)
+  data BLOB NOT NULL,
+  PRIMARY KEY (id, idx)
+);
